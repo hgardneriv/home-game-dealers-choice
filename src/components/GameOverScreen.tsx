@@ -13,6 +13,7 @@ export function GameOverScreen({ state }: { state: ClientGameState }) {
     .filter((p) => p.status === 'seated' || p.status === 'away' || p.status === 'busted')
     .sort((a, b) => b.stack - a.stack);
   const winner = standings[0];
+  const anyTopUps = standings.some((p) => p.topUpsUsed > 0);
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-zinc-950 p-6 text-white">
@@ -31,12 +32,14 @@ export function GameOverScreen({ state }: { state: ClientGameState }) {
           <p className="mt-1 text-sm text-white/60">
             Final count after {state.hand ? `${state.hand.handNo} hands` : 'the session'} · buy-in
             ${buyIn}
+            {anyTopUps ? ' + top-ups' : ''}
           </p>
         </div>
 
         <div className="w-full overflow-hidden rounded-2xl border border-white/10 bg-white/5">
           {standings.map((p, i) => {
-            const net = p.stack - buyIn;
+            // Net against everything they put in, not just the first buy-in.
+            const net = p.stack - p.totalBuyIn;
             const isYou = p.id === state.yourId;
             return (
               <motion.div

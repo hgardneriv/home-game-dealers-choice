@@ -13,6 +13,8 @@ export function CreateGame() {
   const [smallBlind, setSmallBlind] = useState('1');
   const [bigBlind, setBigBlind] = useState('2');
   const [bots, setBots] = useState('0');
+  const [topUps, setTopUps] = useState('2');
+  const [topUpDecay, setTopUpDecay] = useState('50');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +28,11 @@ export function CreateGame() {
     const parse = (raw: string, fallback: number) => {
       const n = parseInt(raw, 10);
       return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+    // Unlike the fields above, 0 is a meaningful choice here (disable / flat).
+    const parse0 = (raw: string, fallback: number) => {
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) && n >= 0 ? n : fallback;
     };
     try {
       const res = await fetch('/api/games', {
@@ -41,6 +48,8 @@ export function CreateGame() {
                   startingStack: parse(stack, 20),
                   smallBlind: parse(smallBlind, 1),
                   bigBlind: parse(bigBlind, 2),
+                  topUps: parse0(topUps, 2),
+                  topUpDecayPct: parse0(topUpDecay, 50),
                 },
               }
         ),
@@ -96,6 +105,8 @@ export function CreateGame() {
               { label: 'Computer players', value: bots, set: setBots, placeholder: '0' },
               { label: 'Small blind', value: smallBlind, set: setSmallBlind, placeholder: '1' },
               { label: 'Big blind', value: bigBlind, set: setBigBlind, placeholder: '2' },
+              { label: 'Top-ups per player', value: topUps, set: setTopUps, placeholder: '2' },
+              { label: 'Top-up shrink %', value: topUpDecay, set: setTopUpDecay, placeholder: '50' },
             ] as const
           ).map((f) => (
             <label key={f.label} className="flex flex-col gap-1">

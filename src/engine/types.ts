@@ -16,6 +16,10 @@ export interface TableConfig {
   actionTimeMs: number; // default 20_000
   timeBankMs: number; // default 10_000
   maxSeats: number; // 6
+  /** Rebuys allowed per player after busting. 0 disables. Default 2. */
+  topUps: number;
+  /** Each successive top-up shrinks by this percent (0 = flat). Default 50. */
+  topUpDecayPct: number;
 }
 
 export interface BotPersonality {
@@ -40,6 +44,12 @@ export interface Player {
   /** Set once the player has been dealt into a hand — new joiners wait out the blind arc. */
   hasPlayed: boolean;
   lastSeenAt: number;
+  /** Cumulative buy-in: starting stack + every top-up taken. Drives net results and chip conservation. */
+  totalBuyIn: number;
+  /** Top-ups consumed so far. */
+  topUpsUsed: number;
+  /** Bots only: epoch ms after which the sweep auto-tops-up this busted bot. */
+  topUpAt: number | null;
 }
 
 export interface SeatRequest {
@@ -166,7 +176,8 @@ export type Action =
   | { type: 'leave'; playerId: string }
   | { type: 'addBot'; byId: string }
   | { type: 'removeBot'; byId: string; playerId: string }
-  | { type: 'imBack'; playerId: string };
+  | { type: 'imBack'; playerId: string }
+  | { type: 'topUp'; playerId: string };
 
 export interface EngineCtx {
   now: number;

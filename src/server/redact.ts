@@ -44,6 +44,9 @@ export interface ClientPlayer {
   timeBankMs: number;
   isHost: boolean;
   isBot: boolean;
+  /** Public — the table can see who re-bought (it's in the events anyway). */
+  totalBuyIn: number;
+  topUpsUsed: number;
 }
 
 export interface ClientHand {
@@ -82,6 +85,9 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
       timeBankMs: p.timeBankMs,
       isHost: p.isHost,
       isBot: p.isBot,
+      // Nullish defaults keep games persisted before the top-up feature valid.
+      totalBuyIn: p.totalBuyIn ?? state.config.startingStack,
+      topUpsUsed: p.topUpsUsed ?? 0,
     };
   }
 

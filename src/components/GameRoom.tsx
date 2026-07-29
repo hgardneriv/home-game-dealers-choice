@@ -26,16 +26,20 @@ function EventNotices({ game }: { game: GameApi }) {
       return;
     }
     for (const event of state.events) {
-      if (event.seq <= lastSeq.current || event.type !== 'player-removed') continue;
-      const d = event.data as { playerId: string; status: string };
-      if (d.playerId === state.yourId) continue;
+      if (event.seq <= lastSeq.current) continue;
+      const d = event.data as { playerId?: string; status?: string; amount?: number };
+      if (!d.playerId || d.playerId === state.yourId) continue;
       const name = state.players[d.playerId]?.name ?? 'A player';
-      toast(
-        d.status === 'kicked'
-          ? `🚪 ${name} was removed by the host`
-          : `👋 ${name} left the game`,
-        'info'
-      );
+      if (event.type === 'player-removed') {
+        toast(
+          d.status === 'kicked'
+            ? `🚪 ${name} was removed by the host`
+            : `👋 ${name} left the game`,
+          'info'
+        );
+      } else if (event.type === 'topped-up') {
+        toast(`💰 ${name} topped up $${d.amount}`, 'info');
+      }
     }
     lastSeq.current = maxSeq;
   }, [state, toast]);

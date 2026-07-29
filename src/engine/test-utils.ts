@@ -102,6 +102,14 @@ export class Table {
     return this.apply({ type: 'nextHand' });
   }
 
+  topUp(playerId: string): GameState {
+    return this.apply({ type: 'topUp', playerId });
+  }
+
+  tryTopUp(playerId: string): EngineResult {
+    return this.tryApply({ type: 'topUp', playerId });
+  }
+
   get hand() {
     return this.state.hand!;
   }

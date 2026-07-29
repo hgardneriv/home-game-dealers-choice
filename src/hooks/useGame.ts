@@ -10,7 +10,7 @@ export interface GameApi {
   /** Server-clock-corrected "now" for countdowns. */
   serverNow: () => number;
   join: (name: string, seat: number) => Promise<string | null>;
-  act: (move: PlayerMove | 'imBack' | 'leave', amount?: number, expectedCall?: number) => Promise<string | null>;
+  act: (move: PlayerMove | 'imBack' | 'leave' | 'topUp', amount?: number, expectedCall?: number) => Promise<string | null>;
   hostOp: (op: string, playerId?: string) => Promise<string | null>;
   seatOp: (op: 'approve' | 'deny', playerId: string) => Promise<string | null>;
   refresh: () => void;

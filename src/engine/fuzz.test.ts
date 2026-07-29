@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { applyAction, createGame } from './engine';
 import { getLegalActions } from './betting';
 import { decideForBot } from './bot';
+import { topUpAmount } from './topup';
 import { seededRandInt } from './test-utils';
 import type { EngineCtx, GameState, PlayerMove } from './types';
 
 /**
  * Fuzz harness: plays complete games with a mix of bot-brain actors and
  * random-legal actors, simulating the server sweep (timeouts, bot turns,
- * next-hand ticks). Invariants are checked after every single action:
- *   - chips are conserved (stacks + live pot == constant)
+ * next-hand ticks) and random busted-player top-ups. Invariants are checked
+ * after every single action:
+ *   - chips are conserved (stacks + live pot == sum of all buy-ins)
+ *   - buy-ins follow the top-up schedule exactly
  *   - no negative stacks or bets
  *   - every hand terminates
  */
@@ -23,10 +26,21 @@ function totalChips(state: GameState): number {
   return state.hand && !state.hand.result ? stacks + pot : stacks;
 }
 
-function checkInvariants(state: GameState, expectedTotal: number): void {
-  expect(totalChips(state)).toBe(expectedTotal);
+/** Top-ups inject chips, so "constant total" is really "sum of all buy-ins". */
+function expectedTotal(state: GameState): number {
+  return Object.values(state.players).reduce((a, p) => a + p.totalBuyIn, 0);
+}
+
+function checkInvariants(state: GameState): void {
+  expect(totalChips(state)).toBe(expectedTotal(state));
   for (const p of Object.values(state.players)) {
     expect(p.stack).toBeGreaterThanOrEqual(0);
+    expect(p.topUpsUsed).toBeLessThanOrEqual(state.config.topUps);
+    if (p.status === 'busted') expect(p.stack).toBe(0);
+    // totalBuyIn must be exactly the starting stack plus the config schedule.
+    let scheduled = state.config.startingStack;
+    for (let k = 0; k < p.topUpsUsed; k++) scheduled += topUpAmount(state.config, k);
+    expect(p.totalBuyIn).toBe(scheduled);
   }
   if (state.hand && !state.hand.result) {
     const r = state.hand.round;
@@ -68,7 +82,11 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
     id: `fuzz${seed}`,
     hostId: 'p0',
     hostName: 'P0',
-    config: { startingStack: 20 + randInt(30) },
+    config: {
+      startingStack: 20 + randInt(30),
+      topUps: randInt(4),
+      topUpDecayPct: [0, 25, 50, 100][randInt(4)],
+    },
     now,
   });
   for (let i = 1; i < numPlayers; i++) {
@@ -87,25 +105,47 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
     if (!approve.ok) throw new Error(approve.error.message);
     state = approve.state;
   }
-  const expectedTotal = numPlayers * state.config.startingStack;
-
   const started = applyAction(state, { type: 'startGame', byId: 'p0' }, ctx());
   if (!started.ok) throw new Error(started.error.message);
   state = started.state;
 
+  // A busted player rebuys with probability 1/2 per hand-over tick — so both
+  // the rebuy paths and the window-expiry endGame paths get exercised.
+  const maybeTopUp = (): boolean => {
+    const busted = Object.values(state.players).filter(
+      (p) => p.seat !== null && p.status === 'busted'
+    );
+    for (const p of busted) {
+      if (randInt(2) === 0) continue;
+      const legal = topUpAmount(state.config, p.topUpsUsed) > 0;
+      const res = applyAction(state, { type: 'topUp', playerId: p.id }, ctx());
+      if (res.ok !== legal) {
+        throw new Error(
+          `topUp by ${p.id} (used ${p.topUpsUsed}) should ${legal ? 'succeed' : 'fail'} (seed ${seed})`
+        );
+      }
+      if (res.ok) {
+        state = res.state;
+        return true;
+      }
+    }
+    return false;
+  };
+
   let handsPlayed = 0;
   let steps = 0;
   while (state.phase !== 'ended') {
-    if (++steps > 20_000) throw new Error(`game did not terminate (seed ${seed})`);
-    checkInvariants(state, expectedTotal);
+    if (++steps > 30_000) throw new Error(`game did not terminate (seed ${seed})`);
+    checkInvariants(state);
 
     if (state.phase === 'hand-over') {
+      if (maybeTopUp()) continue;
       now = (state.nextHandAt ?? now) + 1;
       const res = applyAction(state, { type: 'nextHand' }, ctx());
       if (!res.ok) throw new Error(`nextHand failed: ${res.error.message}`);
       state = res.state;
       handsPlayed++;
-      if (handsPlayed > 2_000) throw new Error(`too many hands (seed ${seed})`);
+      if (handsPlayed > 3_000) throw new Error(`too many hands (seed ${seed})`);
       continue;
     }
 
@@ -118,6 +158,16 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
 
     // Advance the clock a little each step, like real time passing.
     now += 100 + randInt(400);
+
+    // Occasionally a busted spectator rebuys mid-hand — the live hand must
+    // be unaffected (they join the next deal).
+    if (randInt(15) === 0) {
+      const handBefore = JSON.stringify(state.hand);
+      if (maybeTopUp()) {
+        expect(JSON.stringify(state.hand)).toBe(handBefore);
+        continue;
+      }
+    }
 
     const actorIndex = Number(acting.slice(1));
     const useBotBrain = (botMask >> actorIndex) & 1;
@@ -147,7 +197,7 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
     }
     state = res.state;
   }
-  checkInvariants(state, expectedTotal);
+  checkInvariants(state);
   return handsPlayed;
 }
 

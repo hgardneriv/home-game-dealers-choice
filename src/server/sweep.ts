@@ -1,5 +1,6 @@
 import type { Action, GameState } from '@/engine/types';
 import { decideForBot } from '@/engine/bot';
+import { topUpAmount } from '@/engine/topup';
 
 /** Humans get a moment of slack past the visible deadline before auto-action. */
 const TIMEOUT_GRACE_MS = 1000;
@@ -15,6 +16,24 @@ export function dueSweepAction(
   now: number,
   randInt: (n: number) => number
 ): Action | null {
+  // Busted bots rebuy automatically once their "think" delay passes. Checked
+  // before nextHand so a due bot is dealt into the hand that deal starts.
+  // Re-validated here (not just topUpAt) because a rejected due-action would
+  // break the sweep loop in withGame and stall the game permanently.
+  if (state.phase === 'playing' || state.phase === 'hand-over' || state.phase === 'paused') {
+    for (const p of Object.values(state.players)) {
+      if (
+        p.isBot &&
+        p.status === 'busted' &&
+        p.topUpAt != null &&
+        now >= p.topUpAt &&
+        topUpAmount(state.config, p.topUpsUsed ?? 0) > 0
+      ) {
+        return { type: 'topUp', playerId: p.id };
+      }
+    }
+  }
+
   if (state.phase === 'playing' && state.hand) {
     const round = state.hand.round;
     const acting = round.toAct ? state.players[round.toAct] : null;

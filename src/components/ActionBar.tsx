@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GameApi } from '@/hooks/useGame';
+import { topUpAmount } from '@/engine/topup';
 import { useToast } from './Toast';
 import { LeaveButton } from './LeaveButton';
 
@@ -27,7 +28,56 @@ export function ActionBar({ game }: { game: GameApi }) {
     setBusy(false);
   }
 
+  // While busted during a re-entry hold, tick so the countdown stays live.
+  const busted = !!me && me.status === 'busted';
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!busted || state.phase !== 'hand-over') return;
+    const t = setInterval(() => forceTick((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, [busted, state.phase]);
+
   const leave = me && !me.isHost ? <LeaveButton game={game} /> : null;
+
+  if (me && busted) {
+    const amount = topUpAmount(state.config, me.topUpsUsed);
+    // Countdown to the next deal (or game over, if nobody rebuys in time).
+    const secsLeft =
+      state.phase === 'hand-over' && state.nextHandAt !== null
+        ? Math.max(0, Math.ceil((state.nextHandAt - game.serverNow()) / 1000))
+        : null;
+    return (
+      <div className="sticky bottom-0 flex items-center gap-3 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {leave}
+        {amount > 0 ? (
+          <>
+            <span className="flex-1 text-center text-sm text-white">
+              💔 You busted
+              {secsLeft !== null ? ` · next hand in ${secsLeft}s` : ' — rejoin next hand'}
+            </span>
+            <button
+              className="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
+              disabled={busy || secsLeft === 0}
+              onClick={async () => {
+                if (busy) return;
+                setBusy(true);
+                const error = await game.act('topUp');
+                if (error) toast(error);
+                setBusy(false);
+              }}
+            >
+              💰 Top up ${amount}
+            </button>
+          </>
+        ) : (
+          <span className="flex-1 text-center text-sm text-white/60">
+            You&apos;re out of chips — spectating
+          </span>
+        )}
+        {!leave && amount <= 0 && <span className="w-24" aria-hidden />}
+      </div>
+    );
+  }
 
   // Away banner beats everything.
   if (me && me.status === 'away') {

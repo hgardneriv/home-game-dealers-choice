@@ -19,12 +19,15 @@ import {
   nextToAct,
 } from './betting';
 import { resolveFoldWin, resolveShowdown } from './showdown';
+import { topUpAmount } from './topup';
 
 export { getLegalActions };
 
 const EVENT_CAP = 100;
 /** Pause between hands so clients can show the result. */
 const HAND_OVER_MS = { foldWin: 2500, showdown: 5000 };
+/** How long a game-deciding bust holds the table open for a rebuy. */
+const TOP_UP_WINDOW_MS = 20_000;
 /** Bots "think" for a moment so play feels natural. */
 const BOT_DELAY_BASE_MS = 800;
 const BOT_DELAY_JITTER_MS = 1400;
@@ -36,6 +39,8 @@ export const DEFAULT_CONFIG: TableConfig = {
   actionTimeMs: 20_000,
   timeBankMs: 10_000,
   maxSeats: 6,
+  topUps: 2,
+  topUpDecayPct: 50,
 };
 
 export function normalizeConfig(partial: Partial<TableConfig>): TableConfig {
@@ -45,6 +50,8 @@ export function normalizeConfig(partial: Partial<TableConfig>): TableConfig {
   cfg.bigBlind = clampInt(cfg.bigBlind, cfg.smallBlind, cfg.startingStack, 2);
   cfg.actionTimeMs = clampInt(cfg.actionTimeMs, 5_000, 120_000, DEFAULT_CONFIG.actionTimeMs);
   cfg.timeBankMs = clampInt(cfg.timeBankMs, 0, 60_000, DEFAULT_CONFIG.timeBankMs);
+  cfg.topUps = clampInt(cfg.topUps, 0, 20, DEFAULT_CONFIG.topUps);
+  cfg.topUpDecayPct = clampInt(cfg.topUpDecayPct, 0, 100, DEFAULT_CONFIG.topUpDecayPct);
   return cfg;
 }
 
@@ -72,6 +79,9 @@ export function createGame(opts: {
     isBot: false,
     hasPlayed: false,
     lastSeenAt: opts.now,
+    totalBuyIn: config.startingStack,
+    topUpsUsed: 0,
+    topUpAt: null,
   };
   return {
     id: opts.id,
@@ -141,6 +151,9 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
         isBot: false,
         hasPlayed: false,
         lastSeenAt: ctx.now,
+        totalBuyIn: state.config.startingStack,
+        topUpsUsed: 0,
+        topUpAt: null,
       };
       state.seatRequests.push({
         playerId: action.playerId,
@@ -354,6 +367,9 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
         },
         hasPlayed: false,
         lastSeenAt: ctx.now,
+        totalBuyIn: state.config.startingStack,
+        topUpsUsed: 0,
+        topUpAt: null,
       };
       state.seats[seat] = id;
       emit(m, 'player-seated', { playerId: id, name, seat, isBot: true });
@@ -382,6 +398,41 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
         if (state.phase === 'playing' && round?.toAct === player.id) {
           round.actionDeadline = ctx.now + state.config.actionTimeMs;
           round.timeBankArmed = false;
+        }
+      }
+      return done();
+    }
+
+    case 'topUp': {
+      const player = state.players[action.playerId];
+      if (!player) return fail('unknown-player', 'No such player');
+      if (state.phase === 'ended') return fail('bad-phase', 'Game is over');
+      if (state.phase === 'lobby') return fail('bad-phase', 'Game has not started');
+      if (player.status !== 'busted' || player.seat === null)
+        return fail('illegal-move', 'You still have chips');
+      const amount = topUpAmount(state.config, player.topUpsUsed ?? 0);
+      if (amount <= 0) return fail('illegal-move', 'No top-ups remaining');
+
+      player.stack = amount;
+      player.totalBuyIn = (player.totalBuyIn ?? state.config.startingStack) + amount;
+      player.topUpsUsed = (player.topUpsUsed ?? 0) + 1;
+      player.status = 'seated';
+      player.topUpAt = null;
+      player.lastSeenAt = ctx.now;
+      emit(m, 'topped-up', {
+        playerId: player.id,
+        amount,
+        remaining: state.config.topUps - player.topUpsUsed,
+      });
+
+      // If this rebuy revived a game that was holding open for it, don't make
+      // the table sit out the rest of the long window — deal soon.
+      if (state.phase === 'hand-over' && state.nextHandAt !== null) {
+        const chipped = Object.values(state.players).filter(
+          (p) => p.seat !== null && p.stack > 0 && p.status !== 'kicked' && p.status !== 'left'
+        );
+        if (chipped.length >= 2) {
+          state.nextHandAt = Math.min(state.nextHandAt, ctx.now + HAND_OVER_MS.showdown);
         }
       }
       return done();
@@ -599,16 +650,17 @@ function finishHand(
     if (player.seat !== null && player.stack === 0 && player.status !== 'busted') {
       player.status = 'busted';
       emit(m, 'player-busted', { playerId: player.id });
+      // Busted bots rebuy on their own after a "think" delay (sweep-driven).
+      if (player.isBot && topUpAmount(state.config, player.topUpsUsed ?? 0) > 0) {
+        player.topUpAt = ctx.now + BOT_DELAY_BASE_MS + ctx.randInt(BOT_DELAY_JITTER_MS);
+      }
     }
   }
 
-  const stillChipped = Object.values(state.players).filter(
-    (p) => p.seat !== null && p.stack > 0 && p.status !== 'kicked' && p.status !== 'left'
-  );
-  if (stillChipped.length <= 1) {
-    endGame(m, stillChipped[0]?.id ?? null);
-    return;
-  }
+  // 'holding' returns too: the extended rebuy deadline must not be overwritten
+  // by the normal between-hands delay below (and the hold outranks a pending
+  // pause — pauseAfterHand stays set for the next completed hand).
+  if (settleOrHold(m) !== 'normal') return;
 
   if (state.pauseAfterHand) {
     state.pauseAfterHand = false;
@@ -620,6 +672,48 @@ function finishHand(
 
   state.phase = 'hand-over';
   state.nextHandAt = ctx.now + HAND_OVER_MS[kind];
+}
+
+/** Seated, chipped, still-present players — the ones who could play a hand. */
+function chippedPlayers(state: GameState): Player[] {
+  return Object.values(state.players).filter(
+    (p) => p.seat !== null && p.stack > 0 && p.status !== 'kicked' && p.status !== 'left'
+  );
+}
+
+/** Seated busted players whose next top-up is still available. */
+function eligibleRebuyers(state: GameState): Player[] {
+  return Object.values(state.players).filter(
+    (p) =>
+      p.seat !== null &&
+      p.status === 'busted' &&
+      topUpAmount(state.config, p.topUpsUsed ?? 0) > 0
+  );
+}
+
+/**
+ * End the game if it truly can't continue, or hold the table open when a
+ * top-up could still save it. When a bust (or leave) drops the table below
+ * two chipped players but rebuys remain, we park in 'hand-over' with an
+ * extended deadline instead of ending; the expired window settles naturally
+ * via nextHand -> startHand's "<2 eligible" endGame.
+ */
+function settleOrHold(m: Mutable): 'ended' | 'holding' | 'normal' {
+  const { state, ctx } = m;
+  const chipped = chippedPlayers(state);
+  if (chipped.length >= 2) return 'normal';
+  const rebuyers = eligibleRebuyers(state);
+  if (chipped.length + rebuyers.length >= 2) {
+    state.phase = 'hand-over';
+    state.nextHandAt = Math.max(state.nextHandAt ?? 0, ctx.now + TOP_UP_WINDOW_MS);
+    emit(m, 'top-up-window', {
+      until: state.nextHandAt,
+      playerIds: rebuyers.map((p) => p.id),
+    });
+    return 'holding';
+  }
+  endGame(m, chipped[0]?.id ?? null);
+  return 'ended';
 }
 
 function endGame(
@@ -667,15 +761,14 @@ function removePlayer(m: Mutable, playerId: string, status: 'kicked' | 'left'): 
     player.seat = null;
   }
   player.status = status;
+  player.topUpAt = null;
   emit(m, 'player-removed', { playerId, status });
 
   if (state.phase === 'playing') advance(m);
-  else if (state.phase === 'hand-over' || state.phase === 'lobby') {
-    const remaining = Object.values(state.players).filter(
-      (p) => p.seat !== null && p.stack > 0
-    );
-    if (state.phase === 'hand-over' && remaining.length <= 1) {
-      endGame(m, remaining[0]?.id ?? null);
-    }
+  else if (state.phase === 'hand-over') {
+    // Same gate as finishHand: the last chipped opponent leaving shouldn't end
+    // the game while a busted player could still rebuy — and a rebuyer leaving
+    // mid-window should settle it for the winner immediately.
+    settleOrHold(m);
   }
 }

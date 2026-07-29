@@ -34,6 +34,10 @@ function describeEvent(event: GameEvent, names: (id: string) => string): string 
         : `${names(String(d.playerId))} left the game`;
     case 'player-busted':
       return `${names(String(d.playerId))} is busted`;
+    case 'topped-up':
+      return `${names(String(d.playerId))} tops up $${d.amount}`;
+    case 'top-up-window':
+      return 'Waiting for rebuys…';
     case 'player-away':
       return `${names(String(d.playerId))} is away`;
     case 'player-back':
