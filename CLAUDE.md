@@ -119,8 +119,11 @@ seat; `rig(playerCards, board)` plants cards; `legalFor` returns narrowed
 `BettingLegal`). Server CAS tests use `MemoryKV` via `globalThis.__gameKV`.
 When touching engine logic, add a scenario test first; fuzz catches
 conservation breaks. Mutation testing: `npx stryker run` (engine+server,
-`bot.ts` excluded) — re-harden after M3; expect a dip until then. Cache-bust
-with `rm -rf reports .stryker-tmp` after changing tests.
+`bot.ts` excluded) — **94.5% kill rate** (July 2026 hardening pass; 618-test
+suite). The ~200 remaining survivors are documented: variant bot-policy tuning
+constants (same category as the excluded bot.ts) and proven-equivalent mutants
+(one-line proofs in the `*.mutants.test.ts` headers and hardening-pass agent
+reports). Cache-bust with `rm -rf reports .stryker-tmp` after changing tests.
 
 Browser-automation caveat: an occluded Chrome window gets no rAF, so Motion
 animations freeze in screenshots — tool environment, not a bug.
