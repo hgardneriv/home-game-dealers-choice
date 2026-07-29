@@ -1,4 +1,12 @@
-import type { BotPersonality, Card, GameState, LegalActions, PlayerMove, VariantId } from './types';
+import type {
+  BotPersonality,
+  Card,
+  GameState,
+  LegalActions,
+  PlayerMove,
+  VariantId,
+  VariantMoveInput,
+} from './types';
 import { rankValue, suitOf, type RandInt } from './deck';
 import { CATEGORY, evaluate5, evaluate7 } from './evaluator';
 import { getLegalActions } from './betting';
@@ -137,14 +145,22 @@ export function hasOpenEndedDraw(hole: Card[], board: Card[]): boolean {
 
 /** Hold'em betting brain: decide a legal move from the view. Deterministic given randInt. */
 export function botDecide(view: BotView, randInt: RandInt): BotDecision {
-  const { personality } = view;
-  if (view.legal.kind !== 'betting') return { move: 'check' };
-  const legal = view.legal;
-  const noise = (randInt(21) - 10) / 100; // ±0.10
   const raw =
     view.board.length === 0
       ? preflopStrength(view.hole)
       : postflopStrength(view.hole, view.board);
+  return decideFromStrength(view, randInt, raw);
+}
+
+/**
+ * The shared betting-decision skeleton: variants supply a raw 0..1 hand
+ * strength; personality, pot odds, bluffing, and sizing are common.
+ */
+export function decideFromStrength(view: BotView, randInt: RandInt, raw: number): BotDecision {
+  const { personality } = view;
+  if (view.legal.kind !== 'betting') return { move: 'check' };
+  const legal = view.legal;
+  const noise = (randInt(21) - 10) / 100; // ±0.10
   const strength = clamp01(raw + noise + (0.5 - personality.tightness) * 0.15);
 
   const wantsAggression = strength > 0.55 + (1 - personality.aggression) * 0.25;
@@ -192,6 +208,22 @@ export function botDecide(view: BotView, randInt: RandInt): BotDecision {
     return { move: 'call' };
   }
   return { move: 'fold' };
+}
+
+/** Full pipeline from game state to an exchange move (exchange rounds only). */
+export function decideExchangeForBot(
+  state: GameState,
+  botId: string,
+  randInt: RandInt
+): VariantMoveInput | null {
+  const hand = state.hand;
+  if (!hand || hand.round.kind !== 'exchange') return null;
+  const view = buildBotView(state, botId);
+  if (!view || view.legal.kind !== 'exchange') return null;
+  const variant = getVariant(hand.variant);
+  const move = variant.bot.decideExchange?.(view, randInt);
+  // Safe default: the variant's auto move (e.g. stand pat).
+  return move ?? view.legal.autoMove;
 }
 
 /** Convenience: full pipeline from game state to a betting decision (betting rounds only). */

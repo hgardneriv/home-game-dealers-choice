@@ -11,6 +11,10 @@ function describeEvent(event: GameEvent, names: (id: string) => string): string 
       return `— Hand #${d.handNo}: ${String(d.variantName ?? '')} —`;
     case 'antes-posted':
       return `Everyone antes $${d.amount}`;
+    case 'cards-drawn':
+      return Number(d.count) === 0
+        ? `${names(String(d.playerId))} stands pat`
+        : `${names(String(d.playerId))} draws ${d.count}`;
     case 'choosing-game':
       return `${names(String(d.playerId ?? d.dealerId))} has the deal — picking the game`;
     case 'game-chosen':

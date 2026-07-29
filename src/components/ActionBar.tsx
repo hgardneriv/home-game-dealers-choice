@@ -6,6 +6,7 @@ import { topUpAmount } from '@/engine/topup';
 import { getVariant } from '@/engine/variants/registry';
 import { useToast } from './Toast';
 import { LeaveButton } from './LeaveButton';
+import { PlayingCard } from './PlayingCard';
 
 export function ActionBar({ game }: { game: GameApi }) {
   const toast = useToast();
@@ -17,15 +18,17 @@ export function ActionBar({ game }: { game: GameApi }) {
 
   const [raiseTo, setRaiseTo] = useState<number | null>(null);
   const [showSizing, setShowSizing] = useState(false);
+  const [selected, setSelected] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
 
-  // Reset the sizing UI when the turn context changes (adjust-during-render).
+  // Reset the sizing/discard UI when the turn context changes (adjust-during-render).
   const turnKey = `${hand?.handNo}|${hand?.street}|${hand?.toAct}|${hand?.currentBet}`;
   const [prevTurnKey, setPrevTurnKey] = useState(turnKey);
   if (prevTurnKey !== turnKey) {
     setPrevTurnKey(turnKey);
     setShowSizing(false);
     setRaiseTo(null);
+    setSelected([]);
     setBusy(false);
   }
 
@@ -162,14 +165,60 @@ export function ActionBar({ game }: { game: GameApi }) {
     );
   }
 
-  // Exchange rounds (draw/discard etc.) get their own UI when the first
-  // variant needing one ships; until then show the waiting bar.
+  // Exchange round: tap cards to discard, then draw (five-card draw).
   if (legal.kind !== 'betting') {
+    const spec = legal.moves.find((mv) => mv.kind === 'discard');
+    const myCards = hand.myCards ?? [];
+    const max = spec?.max ?? 0;
+    const toggle = (i: number) =>
+      setSelected((prev) =>
+        prev.includes(i) ? prev.filter((x) => x !== i) : prev.length < max ? [...prev, i] : prev
+      );
+    const submitDraw = async (indexes: number[]) => {
+      if (busy) return;
+      setBusy(true);
+      const error = await game.draw(indexes);
+      if (error) toast(error);
+      setBusy(false);
+    };
     return (
-      <div className="sticky bottom-0 flex items-center gap-3 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {leave}
-        <span className="flex-1 text-center text-sm text-white/60">…</span>
-        {leave && <span className="w-24" aria-hidden />}
+      <div className="sticky bottom-0 flex flex-col gap-2 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <span className="text-center text-sm font-semibold text-amber-300">
+          🂠 Your draw — tap up to {max} cards to swap
+        </span>
+        <div className="flex items-center justify-center gap-1.5">
+          {myCards.map((card, i) => (
+            <button
+              key={`${card}-${i}`}
+              className={`rounded-md transition ${
+                selected.includes(i)
+                  ? '-translate-y-2 ring-2 ring-amber-400'
+                  : 'opacity-95'
+              }`}
+              onClick={() => toggle(i)}
+              aria-pressed={selected.includes(i)}
+            >
+              <PlayingCard card={card} size="sm" />
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          {leave}
+          <button
+            className="flex-1 rounded-xl bg-zinc-600 px-3 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
+            disabled={busy}
+            onClick={() => submitDraw([])}
+          >
+            Stand pat
+          </button>
+          <button
+            className="flex-1 rounded-xl bg-emerald-700 px-3 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
+            disabled={busy || selected.length === 0}
+            onClick={() => submitDraw(selected)}
+          >
+            Discard {selected.length || ''}
+          </button>
+        </div>
       </div>
     );
   }

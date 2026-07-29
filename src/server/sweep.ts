@@ -1,5 +1,5 @@
 import type { Action, GameState } from '@/engine/types';
-import { botChooseVariant, decideForBot } from '@/engine/bot';
+import { botChooseVariant, decideExchangeForBot, decideForBot } from '@/engine/bot';
 import { topUpAmount } from '@/engine/topup';
 
 /** Humans get a moment of slack past the visible deadline before auto-action. */
@@ -39,14 +39,19 @@ export function dueSweepAction(
     const acting = round.toAct ? state.players[round.toAct] : null;
 
     if (acting?.isBot && round.botActAt !== null && now >= round.botActAt) {
-      const decision = decideForBot(state, acting.id, randInt);
-      if (decision) {
-        return {
-          type: 'playerAction',
-          playerId: acting.id,
-          move: decision.move,
-          amount: decision.amount,
-        };
+      if (round.kind === 'exchange') {
+        const move = decideExchangeForBot(state, acting.id, randInt);
+        if (move) return { type: 'variantMove', playerId: acting.id, move };
+      } else {
+        const decision = decideForBot(state, acting.id, randInt);
+        if (decision) {
+          return {
+            type: 'playerAction',
+            playerId: acting.id,
+            move: decision.move,
+            amount: decision.amount,
+          };
+        }
       }
       // Bot brain failed — fall through to the timeout backstop.
     }

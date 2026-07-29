@@ -6,8 +6,9 @@ Fork of `home-game-poker` (July 2026) converting the single-game Texas Hold'em a
 into ante-based **dealer's choice**: the dealer picks the game each hand from a
 host-enabled list. The approved build plan lives in the session plan file and as a
 claude.ai artifact; milestones: **M1** ante conversion + variant framework (DONE),
-**M2** dealer-pick flow, **M3** five-card draw, then stud/guts/baseball/in-between
-as parallel variant modules.
+**M2** dealer-pick flow (DONE), **M3** five-card draw (DONE — the choosing UI is
+live since two games exist), then stud/guts/baseball/in-between as parallel
+variant modules. Suite: 337 tests incl. variant-mixing fuzz.
 
 ## Deployment
 
@@ -131,16 +132,14 @@ animations freeze in screenshots — tool environment, not a bug.
 
 ## Roadmap (user-confirmed)
 
-1. **M2 — dealer-pick flow**: `choosing` phase between hands when >1 variant
-   enabled (skip when 1), `chooseGame`/`chooseTimeout` handlers, sweep checks,
-   ActionBar pick UI, dealer disc from `choosing.buttonSeat`.
-2. **M3 — five-card draw** (`variants/five-draw.ts`): 5 down → bet → discard
-   0–3 (user-confirmed, no 4-with-ace) → bet → showdown `evaluate5`; exchange
-   UI (tap-to-select + Discard/Stand pat); bot draw policy; then a mutation
-   hardening pass over M1–M3.
-3. **Variant fan-out** (parallelizable, one agent per module once M2+M3 prove
-   the interface): 7-stud (faceUp deals, maybe highest-board first-to-act),
-   guts (declare + `settle` + carry-pot & fuzz invariant update), baseball
-   (flip turns; needs wild-card evaluator + five-of-a-kind), in-between
-   (wager/pass vs pot; `score` unused).
-4. Deploy: new Vercel project + Redis + SESSION_SECRET after M2.
+1. **Deploy**: new Vercel project + Upstash Redis + SESSION_SECRET; update the
+   Deployment section above and README when done.
+2. **Variant fan-out** (parallelizable, one agent per module — the interface is
+   proven by five-draw): 7-stud (faceUp deals per street, maybe highest-board
+   first-to-act override), guts (declare exchange + `settle` hook + carry-pot
+   `GameState` field & fuzz invariant update Σ stacks + pot + carry = Σ buyIn),
+   baseball/no-peek (flip exchange turns; needs wild-card evaluator +
+   five-of-a-kind category), in-between (wager/pass vs pot; `score` unused).
+3. **Mutation hardening pass** over the M1–M3 engine (`npx stryker run`,
+   expect a dip from the refactor; target ~90% kill again).
+4. Play-testing with real friends → bot tuning + UX iterations.

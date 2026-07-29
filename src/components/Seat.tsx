@@ -73,9 +73,9 @@ export function Seat({
           Face-up cards (yours, or anyone's at showdown) sit fully clear of
           the plate so the bottom index isn't cut off; face-down backs tuck. */}
       <div
-        className={`z-0 flex gap-0.5 ${showCards ? 'mb-1' : '-mb-2'} ${
-          folded ? 'opacity-70 grayscale' : ''
-        }`}
+        className={`z-0 flex ${
+          Math.max(cardCount, showCards?.length ?? 0) > 2 ? '-space-x-3' : 'gap-0.5'
+        } ${showCards ? 'mb-1' : '-mb-2'} ${folded ? 'opacity-70 grayscale' : ''}`}
       >
         {inHand && !folded && !showCards && (
           <>

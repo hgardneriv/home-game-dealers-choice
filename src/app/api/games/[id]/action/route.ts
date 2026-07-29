@@ -43,6 +43,19 @@ export async function POST(
     return storeResponse(result, playerId);
   }
 
+  // Exchange-round move (draw). Shape-check only — the variant module
+  // validates counts/indexes through the same path getLegalActions exposes.
+  if (move === 'variantMove') {
+    const raw: unknown[] = Array.isArray(body.cardIndexes) ? body.cardIndexes : [];
+    const cardIndexes = raw.filter((n): n is number => Number.isInteger(n)).slice(0, 10);
+    const result = await withGame(gameId, () => ({
+      type: 'variantMove',
+      playerId,
+      move: { kind: 'discard', cardIndexes },
+    }));
+    return storeResponse(result, playerId);
+  }
+
   if (!MOVES.includes(move as PlayerMove))
     return json({ error: { code: 'bad-request', message: 'Unknown move' } }, 400);
   const amount = typeof body.amount === 'number' ? body.amount : undefined;

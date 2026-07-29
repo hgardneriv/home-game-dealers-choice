@@ -15,15 +15,16 @@ seats.
 | Game | Status |
 | --- | --- |
 | Texas Hold'em (ante-based) | ✅ Playable |
-| Dealer picks the game each hand | 🔨 In progress (M2) |
-| 5-card draw | 🔜 Next (M3) |
+| Dealer picks the game each hand | ✅ Live |
+| 5-card draw (discard up to 3) | ✅ Playable |
 | 7-card stud | Planned |
 | 3-card guts | Planned |
 | 7-card no-peek (baseball) | Planned |
 | In-between (acey-deucey) | Planned |
 
-Until more than one game is enabled, hands deal straight into the single enabled
-variant with no picking step — a classic single-game night.
+When more than one game is enabled, the deal rotates and each dealer picks the
+next game (bots pick too; an absent dealer repeats the last game). With exactly
+one game enabled, hands deal straight in — a classic single-game night.
 
 ## House rules
 
@@ -81,8 +82,7 @@ Required env in production: `SESSION_SECRET`, plus `KV_REST_API_URL` /
 
 ## Deploy
 
-Not yet deployed — a new Vercel project + Redis resource lands once the dealer's
-choice flow (M2) is in. Then:
+Not yet deployed — a new Vercel project + Redis resource is the next step. Then:
 
 ```bash
 vercel deploy --prod

@@ -1,6 +1,7 @@
 import type { VariantId } from '../types';
 import type { GameVariant } from './types';
 import { holdem } from './holdem';
+import { fiveDraw } from './five-draw';
 
 /**
  * The playable games. A VariantId may exist in the type union before its
@@ -9,6 +10,7 @@ import { holdem } from './holdem';
  */
 const VARIANTS: Partial<Record<VariantId, GameVariant>> = {
   holdem,
+  'five-draw': fiveDraw,
 };
 
 export const IMPLEMENTED_VARIANTS = Object.keys(VARIANTS) as VariantId[];

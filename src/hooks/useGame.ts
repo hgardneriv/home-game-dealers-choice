@@ -13,6 +13,8 @@ export interface GameApi {
   act: (move: PlayerMove | 'imBack' | 'leave' | 'topUp', amount?: number, expectedCall?: number) => Promise<string | null>;
   /** Dealer's call: pick the next game while the table is choosing. */
   chooseGame: (variant: VariantId) => Promise<string | null>;
+  /** Exchange-round move (five-card draw): discard the given card indexes. */
+  draw: (cardIndexes: number[]) => Promise<string | null>;
   hostOp: (op: string, playerId?: string) => Promise<string | null>;
   seatOp: (op: 'approve' | 'deny', playerId: string) => Promise<string | null>;
   refresh: () => void;
@@ -137,6 +139,7 @@ export function useGame(gameId: string): GameApi {
     },
     act: (move, amount, expectedCall) => post('action', { move, amount, expectedCall }),
     chooseGame: (variant) => post('action', { move: 'chooseGame', variant }),
+    draw: (cardIndexes) => post('action', { move: 'variantMove', cardIndexes }),
     hostOp: (op, playerId) => post('host', { op, playerId }),
     seatOp: (op, playerId) => post('seats', { op, playerId }),
     refresh,

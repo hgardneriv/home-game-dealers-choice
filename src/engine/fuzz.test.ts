@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { applyAction, createGame } from './engine';
 import { getLegalActions } from './betting';
-import { decideForBot } from './bot';
+import { decideExchangeForBot, decideForBot } from './bot';
 import { topUpAmount } from './topup';
 import { seededRandInt } from './test-utils';
-import type { EngineCtx, GameState, PlayerMove } from './types';
+import type { EngineCtx, GameState, PlayerMove, VariantId, VariantMoveInput } from './types';
 
 /**
  * Fuzz harness: plays complete games with a mix of bot-brain actors and
@@ -55,6 +55,17 @@ function checkInvariants(state: GameState): void {
   }
 }
 
+/** A random legal draw: 0..3 distinct indexes out of a five-card hand. */
+function randomDiscard(randInt: (n: number) => number): VariantMoveInput {
+  const count = randInt(4);
+  const pool = [0, 1, 2, 3, 4];
+  const cardIndexes: number[] = [];
+  for (let i = 0; i < count; i++) {
+    cardIndexes.push(pool.splice(randInt(pool.length), 1)[0]);
+  }
+  return { kind: 'discard', cardIndexes };
+}
+
 function randomLegalMove(
   state: GameState,
   playerId: string,
@@ -84,6 +95,7 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
   const ctx = (): EngineCtx => ({ now, randInt });
 
   const ante = 1 + randInt(3); // 1..3
+  const variantMixes: VariantId[][] = [['holdem'], ['five-draw'], ['holdem', 'five-draw']];
   let state = createGame({
     id: `fuzz${seed}`,
     hostId: 'p0',
@@ -92,6 +104,7 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
       startingStack: 20 + randInt(30),
       ante,
       minBet: ante + randInt(3 * ante + 1), // ante..4×ante
+      enabledVariants: variantMixes[randInt(variantMixes.length)],
       topUps: randInt(4),
       topUpDecayPct: [0, 25, 50, 100][randInt(4)],
     },
@@ -157,6 +170,31 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
       continue;
     }
 
+    // Dealer's choice: the dealer picks (occasionally the timer does instead).
+    if (state.phase === 'choosing') {
+      now += 100 + randInt(400);
+      if (randInt(10) === 0) {
+        now = state.choosing!.deadline + 1;
+        const res = applyAction(state, { type: 'chooseTimeout' }, ctx());
+        if (!res.ok) throw new Error(`chooseTimeout failed: ${res.error.message} (seed ${seed})`);
+        state = res.state;
+        continue;
+      }
+      const options = state.config.enabledVariants;
+      const res = applyAction(
+        state,
+        {
+          type: 'chooseGame',
+          playerId: state.choosing!.dealerId,
+          variant: options[randInt(options.length)],
+        },
+        ctx()
+      );
+      if (!res.ok) throw new Error(`chooseGame failed: ${res.error.message} (seed ${seed})`);
+      state = res.state;
+      continue;
+    }
+
     if (state.phase !== 'playing' || !state.hand) {
       throw new Error(`unexpected phase ${state.phase} (seed ${seed})`);
     }
@@ -177,14 +215,8 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
       }
     }
 
-    const actorIndex = Number(acting.slice(1));
-    const useBotBrain = (botMask >> actorIndex) & 1;
-    const decision = useBotBrain
-      ? // decideForBot only returns null off betting rounds — hold'em has none.
-        (decideForBot(state, acting, randInt) ?? randomLegalMove(state, acting, randInt))
-      : randomLegalMove(state, acting, randInt);
-
-    // Occasionally let the timer fire instead of acting.
+    // Occasionally let the timer fire instead of acting (covers the
+    // exchange-round auto-stand-pat path too).
     if (randInt(20) === 0) {
       now = (state.hand.round.actionDeadline ?? now) + 1;
       const res = applyAction(state, { type: 'timeout' }, ctx());
@@ -192,6 +224,28 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
       state = res.state;
       continue;
     }
+
+    const actorIndex = Number(acting.slice(1));
+    const useBotBrain = (botMask >> actorIndex) & 1;
+
+    if (state.hand.round.kind === 'exchange') {
+      const move: VariantMoveInput = useBotBrain
+        ? (decideExchangeForBot(state, acting, randInt) ?? { kind: 'discard', cardIndexes: [] })
+        : randomDiscard(randInt);
+      const res = applyAction(state, { type: 'variantMove', playerId: acting, move }, ctx());
+      if (!res.ok) {
+        throw new Error(
+          `illegal draw by ${acting} (${JSON.stringify(move)}) seed ${seed}: ${res.error.message}`
+        );
+      }
+      state = res.state;
+      continue;
+    }
+
+    const decision = useBotBrain
+      ? // decideForBot only returns null off betting rounds — handled above.
+        (decideForBot(state, acting, randInt) ?? randomLegalMove(state, acting, randInt))
+      : randomLegalMove(state, acting, randInt);
 
     const res = applyAction(
       state,
