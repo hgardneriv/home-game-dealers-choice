@@ -20,9 +20,16 @@ const FELT_TILE = `url("data:image/svg+xml,${encodeURIComponent(
 )}")`;
 
 const FELT_LAYERS = [
-  'radial-gradient(ellipse at 50% 35%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 60%)',
+  'radial-gradient(ellipse at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0) 60%)',
   FELT_TILE,
-  'radial-gradient(ellipse at 50% 38%, #1f8354 0%, #146240 45%, #093d25 100%)',
+  'radial-gradient(ellipse at 50% 38%, #15714a 0%, #0d5334 45%, #05301d 100%)',
+].join(', ');
+
+/** Mahogany rail: top sheen + fine grain streaks over a deep warm radial. */
+const WOOD_LAYERS = [
+  'linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0) 20%, rgba(0,0,0,0.28) 100%)',
+  'repeating-linear-gradient(95deg, rgba(0,0,0,0.14) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,0.1) 5px, rgba(80,35,12,0.18) 8px)',
+  'radial-gradient(ellipse at 50% 25%, #8a4d26 0%, #5f3115 55%, #331508 100%)',
 ].join(', ');
 
 interface Point {
@@ -100,46 +107,70 @@ export function Table({ game }: { game: GameApi }) {
 
   return (
     <div
-      className="absolute inset-2 border-[10px] border-amber-950/90 shadow-[inset_0_0_60px_rgba(0,0,0,0.55),0_10px_30px_rgba(0,0,0,0.5)]"
-      style={{
-        borderRadius: orientation === 'landscape' ? '45% / 42%' : '42% / 46%',
-        backgroundImage: FELT_LAYERS,
-        backgroundSize: 'auto, 120px 120px, auto',
-        backgroundRepeat: 'no-repeat, repeat, no-repeat',
-      }}
+      className="absolute inset-2"
+      style={{ borderRadius: orientation === 'landscape' ? '45% / 42%' : '42% / 46%' }}
     >
-      {/* Gold pinstripe hugging the wooden rail */}
+      {/* Wood rail */}
       <div
-        className="pointer-events-none absolute inset-1 border border-amber-300/25"
+        className="absolute inset-0 shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
+        style={{ borderRadius: 'inherit', backgroundImage: WOOD_LAYERS }}
+      />
+      {/* Dark seam, then gold trim, between wood and felt */}
+      <div
+        className="pointer-events-none absolute inset-[10px] z-10 border-2 border-black/50"
         style={{ borderRadius: 'inherit' }}
       />
-      {/* Inner rail (betting) line */}
       <div
-        className="pointer-events-none absolute inset-4 border border-white/10"
+        className="pointer-events-none absolute inset-[12px] z-10 border border-amber-300/60"
+        style={{ borderRadius: 'inherit' }}
+      />
+      {/* Felt */}
+      <div
+        className="absolute inset-[14px] shadow-[inset_0_0_80px_rgba(0,0,0,0.6)]"
+        style={{
+          borderRadius: 'inherit',
+          backgroundImage: FELT_LAYERS,
+          backgroundSize: 'auto, 120px 120px, auto',
+          backgroundRepeat: 'no-repeat, repeat, no-repeat',
+        }}
+      />
+      {/* Double gold pinstripe inside the rail — the only ornament, kept clean */}
+      <div
+        className="pointer-events-none absolute inset-[26px] border-2 border-amber-300/30"
+        style={{ borderRadius: 'inherit' }}
+      />
+      <div
+        className="pointer-events-none absolute inset-[32px] border border-amber-300/15"
         style={{ borderRadius: 'inherit' }}
       />
 
-      {/* Felt logo — an embroidered-style gold badge */}
+      {/* Felt logo — soft gold glow, title, and flanked subtitle */}
       <div className="pointer-events-none absolute left-1/2 top-[62%] z-0 -translate-x-1/2 -translate-y-1/2 select-none text-center">
-        <div className="rounded-[50%] border border-amber-200/20 px-8 py-3 sm:px-10 sm:py-4">
-          <div
-            className="text-2xl leading-none tracking-[0.5em] text-black/60 sm:text-[28px]"
-            style={{ paddingLeft: '0.5em' }}
-          >
-            ♠&nbsp;♥&nbsp;♦&nbsp;♣
-          </div>
-          <div
-            className="mt-0.5 bg-gradient-to-b from-amber-50/95 via-amber-300/85 to-amber-500/70 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
-            style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
-          >
-            HOME GAME
-          </div>
-          <div
-            className="mt-0.5 text-[10px] tracking-[0.4em] text-white/50 sm:text-xs"
-            style={{ paddingLeft: '0.4em' }}
-          >
+        <div
+          className="absolute left-1/2 top-1/2 h-48 w-[26rem] max-w-[80vw] -translate-x-1/2 -translate-y-1/2"
+          style={{
+            background:
+              'radial-gradient(closest-side, rgba(216,180,92,0.16) 0%, rgba(216,180,92,0) 100%)',
+          }}
+        />
+        <div
+          className="relative text-2xl leading-none tracking-[0.5em] text-black/60 sm:text-[28px]"
+          style={{ paddingLeft: '0.5em' }}
+        >
+          ♠&nbsp;♥&nbsp;♦&nbsp;♣
+        </div>
+        <div
+          className="relative mt-1 bg-gradient-to-b from-amber-100 via-amber-300/95 to-amber-600/85 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
+          style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
+        >
+          HOME GAME
+        </div>
+        <div className="relative mt-1.5 flex items-center justify-center gap-2">
+          <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
+          <span className="text-[10px] tracking-[0.4em] text-amber-100/60 sm:text-xs" style={{ paddingLeft: '0.4em' }}>
             TEXAS HOLD&apos;EM
-          </div>
+          </span>
+          <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
         </div>
       </div>
 
@@ -166,7 +197,11 @@ export function Table({ game }: { game: GameApi }) {
                 ) : (
                   <div
                     key={`slot${i}`}
-                    className="w-12 aspect-[20/29] rounded-[4px] border border-white/15 bg-black/10 sm:w-14"
+                    className="w-12 aspect-[20/29] rounded-[4px] border border-amber-400/40 bg-[#0c2318]/90 sm:w-14"
+                    style={{
+                      boxShadow:
+                        'inset 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 0 3px rgba(216,180,92,0.22)',
+                    }}
                   />
                 );
               })}

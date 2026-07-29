@@ -65,7 +65,12 @@ export function Seat({
     <motion.div
       // Your own folded seat stays a bit more legible so you can read your cards.
       animate={{ opacity: folded ? (isYou ? 0.65 : 0.45) : 1 }}
-      className="flex w-max min-w-24 max-w-36 flex-col items-center sm:max-w-48"
+      // Your seat gets an ornate gold-trimmed plaque; opponents stay compact.
+      className={`flex w-max min-w-24 max-w-36 flex-col items-center sm:max-w-48 ${
+        isYou
+          ? 'rounded-xl border border-amber-400/50 bg-black/40 px-2 pb-1 pt-2 shadow-[0_0_0_3px_rgba(0,0,0,0.35),inset_0_0_0_2px_rgba(216,180,92,0.15),0_4px_14px_rgba(0,0,0,0.45)]'
+          : ''
+      }`}
     >
       {/* Cards peeking above the plate. After folding, you (and only you)
           still see your own cards greyed out — to watch what might have been.
