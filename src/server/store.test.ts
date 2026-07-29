@@ -91,6 +91,14 @@ describe('store CAS pipeline', () => {
         entry.state.hand.round.botActAt = Date.now() - 1;
         entry.state.hand.round.actionDeadline = Date.now() + 60_000;
         await kv.cas(gameId, entry.version, entry.state);
+      } else if (entry.state.hand) {
+        // The random button put the human host first to act (no botActAt).
+        // Expire their deadline with the time bank already spent — the first
+        // timeout would otherwise just arm the bank and extend the clock —
+        // so the sweep's timeout auto-acts and emits an 'action' event.
+        entry.state.hand.round.actionDeadline = Date.now() - 2_000;
+        entry.state.hand.round.timeBankArmed = true;
+        await kv.cas(gameId, entry.version, entry.state);
       }
       return true;
     })();
