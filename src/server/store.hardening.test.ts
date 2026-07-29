@@ -199,7 +199,7 @@ describe('withGame', () => {
     // Seed a hand-over state whose next hand is scheduled in the real future.
     const t = new Table(2);
     t.start();
-    t.act('p0', 'fold');
+    t.act('p1', 'fold'); // p1 sits left of the button and acts first
     t.state.nextHandAt = Date.now() + 60_000;
     await kv.cas('seeded1', 0, t.state);
 
@@ -212,7 +212,7 @@ describe('withGame', () => {
     // Engine-clock state: nextHandAt (~epoch 1e6) is deep in the real past.
     const t = new Table(2);
     t.start();
-    t.act('p0', 'fold');
+    t.act('p1', 'fold');
     await kv.cas('seeded2', 0, t.state);
 
     const res = await withGame('seeded2');
@@ -229,7 +229,7 @@ describe('withGame', () => {
   it('persists sweep results even when the user action on top fails', async () => {
     const t = new Table(2);
     t.start();
-    t.act('p0', 'fold');
+    t.act('p1', 'fold');
     await kv.cas('seeded3', 0, t.state);
 
     // After the sweep deals the next hand, startGame is a bad-phase error.
@@ -257,7 +257,10 @@ describe('createNewGame', () => {
   it('normalizes and applies a partial config', async () => {
     const { state } = await createNewGame({ hostName: 'H', config: { startingStack: 55 } });
     expect(state.config.startingStack).toBe(55);
-    expect(state.config.bigBlind).toBe(2); // defaults fill the rest
+    // Defaults fill the rest of the ante-based config.
+    expect(state.config.ante).toBe(1);
+    expect(state.config.minBet).toBe(2);
+    expect(state.config.enabledVariants).toEqual(['holdem']);
   });
 
   it('clamps bot count to 0..5 and adds exactly that many', async () => {

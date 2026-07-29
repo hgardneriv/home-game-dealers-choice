@@ -1,4 +1,12 @@
-import type { Action, EngineCtx, EngineResult, GameState, LegalActions, PlayerMove } from './types';
+import type {
+  Action,
+  BettingLegal,
+  EngineCtx,
+  EngineResult,
+  GameState,
+  LegalActions,
+  PlayerMove,
+} from './types';
 import { applyAction, createGame } from './engine';
 import { getLegalActions } from './betting';
 
@@ -136,13 +144,16 @@ export class Table {
   }
 
   /**
-   * Rig the current hand: overwrite hole cards and the upcoming board cards.
-   * Cards must be chosen disjoint from each other; remaining deck cards that
-   * happen to duplicate are never dealt (board is exactly 5 cards).
+   * Rig the current hand: overwrite players' cards (face-down) and the
+   * upcoming board cards. Cards must be chosen disjoint from each other;
+   * remaining deck cards that happen to duplicate are never dealt (a hold'em
+   * board is exactly 5 cards).
    */
-  rig(holeCards: Record<string, [string, string]>, board: string[] = []): void {
+  rig(playerCards: Record<string, string[]>, board: string[] = []): void {
     const hand = this.state.hand!;
-    Object.assign(hand.holeCards, holeCards);
+    for (const [id, cards] of Object.entries(playerCards)) {
+      hand.playerCards[id] = { cards: [...cards], faceUp: cards.map(() => false) };
+    }
     board.forEach((card, i) => {
       hand.deck[hand.deckPos + i] = card;
     });
@@ -183,8 +194,10 @@ export class Table {
   }
 }
 
-export function legalFor(state: GameState, playerId: string): LegalActions {
-  const legal = getLegalActions(state, playerId);
+export function legalFor(state: GameState, playerId: string): BettingLegal {
+  const legal: LegalActions | null = getLegalActions(state, playerId);
   if (!legal) throw new Error(`no legal actions for ${playerId} (not their turn)`);
+  if (legal.kind !== 'betting')
+    throw new Error(`expected a betting round for ${playerId}, got ${legal.kind}`);
   return legal;
 }

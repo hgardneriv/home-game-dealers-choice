@@ -5,6 +5,7 @@ import type { GameApi } from '@/hooks/useGame';
 import { useOrientation } from '@/hooks/useOrientation';
 import { Seat } from './Seat';
 import { PlayingCard, SUIT_PATH } from './PlayingCard';
+import { getVariant } from '@/engine/variants/registry';
 
 /**
  * Felt texture: a sparse diagonal tile of dark suit motifs baked into a
@@ -90,6 +91,7 @@ export function Table({ game }: { game: GameApi }) {
   const mySeat = state.yourId ? (state.players[state.yourId]?.seat ?? 0) : 0;
   const posFor = (seatIndex: number) => positions[(seatIndex - mySeat + 6) % 6];
 
+  const variant = hand ? getVariant(hand.variant) : null;
   const result = hand?.result ?? null;
   const winnersLine = (() => {
     if (!result || !hand) return null;
@@ -168,7 +170,7 @@ export function Table({ game }: { game: GameApi }) {
         <div className="relative mt-1.5 flex items-center justify-center gap-2">
           <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
           <span className="text-[10px] tracking-[0.4em] text-amber-100/60 sm:text-xs" style={{ paddingLeft: '0.4em' }}>
-            TEXAS HOLD&apos;EM
+            {variant ? variant.marquee : "DEALER'S CHOICE"}
           </span>
           <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
         </div>
@@ -183,14 +185,13 @@ export function Table({ game }: { game: GameApi }) {
           <div className="text-center text-white/85">
             <div className="text-sm font-medium">Waiting for players…</div>
             <div className="mt-1 text-xs opacity-70">
-              blinds ${state.config.smallBlind}/${state.config.bigBlind} · buy-in $
-              {state.config.startingStack}
+              ante ${state.config.ante} · buy-in ${state.config.startingStack}
             </div>
           </div>
         ) : (
           <>
             <div className="flex gap-1.5">
-              {[0, 1, 2, 3, 4].map((i) => {
+              {(variant === null || variant.layoutHint === 'board') && [0, 1, 2, 3, 4].map((i) => {
                 const card = hand?.board[i];
                 return card ? (
                   <PlayingCard key={card} card={card} size="md" dealt />
@@ -312,7 +313,7 @@ export function Table({ game }: { game: GameApi }) {
             className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
           >
-            <Seat game={game} seatIndex={seatIndex} playerId={playerId} />
+            <Seat game={game} playerId={playerId} />
           </div>
         );
       })}

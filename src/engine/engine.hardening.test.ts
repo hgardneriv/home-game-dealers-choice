@@ -8,9 +8,13 @@ import type { EngineResult, GameEvent, GameState } from './types';
  * whose Stryker mutants survived the original suite: validation guards, event
  * payloads/ordering, deadline stamping boundaries, away/time-bank semantics,
  * kick/leave paths, bot creation, and the event ring buffer.
+ *
+ * Layout with zeroRand: first-hand button = seat 0 (p0); hand order is
+ * clockwise from its left with the button last (3-handed: p1, p2, p0), and
+ * p1 opens every street.
  */
 
-const data = (e: GameEvent) => e.data as Record<string, any>;
+const data = (e: GameEvent) => e.data as Record<string, unknown>;
 const types = (evs: GameEvent[]) => evs.map((e) => e.type);
 const eventsOf = (state: GameState, type: string) =>
   state.events.filter((e) => e.type === type);
@@ -20,27 +24,28 @@ function okEvents(res: EngineResult): GameEvent[] {
   return res.events;
 }
 
-/** Heads-up (zeroRand: p0 = button/SB): p0 shoves, p1 calls and busts. */
+/** Heads-up (zeroRand: p0 = button, p1 opens): p1 shoves, p0 calls, p1 busts. */
 function bustP1HeadsUp(t: Table): void {
   t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-  t.act('p0', 'raise', t.stack('p0') + (t.hand.round.committed['p0'] ?? 0));
-  t.act('p1', 'call');
+  t.act('p1', 'bet', t.stack('p1') + (t.hand.round.committed['p1'] ?? 0));
+  t.act('p0', 'call');
   expect(t.state.players['p1'].status).toBe('busted');
 }
 
-/** 3-handed: p0 burns their bank and goes away in hand 1; hand 2 reaches p0's BB turn. */
-function awayP0OnTurn(): Table {
+/** 3-handed: p1 burns their bank and goes away in hand 1; hand 2 reaches p1's turn. */
+function awayP1OnTurn(): Table {
   const t = new Table(3);
   t.start();
   t.now = t.hand.round.actionDeadline! + 1;
   t.apply({ type: 'timeout' }); // arms the time bank
   t.now = t.hand.round.actionDeadline! + 1;
-  t.apply({ type: 'timeout' }); // p0 auto-folds and goes away
-  t.act('p1', 'fold'); // p2 wins hand 1
-  t.nextHand(); // hand 2: button 1, SB 2, BB 0 (p0, away)
-  t.act('p1', 'call');
-  t.act('p2', 'call');
-  expect(t.toAct).toBe('p0');
+  t.apply({ type: 'timeout' }); // p1 auto-checks and goes away
+  t.act('p2', 'fold');
+  t.act('p0', 'fold'); // p1 wins hand 1
+  t.nextHand(); // hand 2: button seat 1, order p2, p0, p1
+  t.act('p2', 'check');
+  t.act('p0', 'check');
+  expect(t.toAct).toBe('p1');
   return t;
 }
 
@@ -52,6 +57,27 @@ describe('config normalization', () => {
     expect(cfg.startingStack).toBe(20);
     expect(cfg.actionTimeMs).toBe(20_000);
   });
+
+  it('ante defaults to 1; minBet defaults to 2×ante and never sits below the ante', () => {
+    const cfg = normalizeConfig({});
+    expect(cfg.ante).toBe(1);
+    expect(cfg.minBet).toBe(2);
+    expect(normalizeConfig({ ante: 0 }).ante).toBe(1); // clamp floor
+    expect(normalizeConfig({ ante: 5 }).minBet).toBe(10); // 2×ante default
+    expect(normalizeConfig({ ante: 5, minBet: 3 }).minBet).toBe(5); // floor = ante
+    expect(normalizeConfig({ ante: 999 }).ante).toBe(20); // cap = startingStack
+  });
+
+  it('enabledVariants keeps only implemented ids, dedupes, and never goes empty', () => {
+    expect(normalizeConfig({}).enabledVariants).toEqual(['holdem']);
+    expect(normalizeConfig({ enabledVariants: ['holdem', 'holdem'] }).enabledVariants)
+      .toEqual(['holdem']);
+    expect(normalizeConfig({ enabledVariants: ['five-draw'] }).enabledVariants)
+      .toEqual(['holdem']); // unimplemented id filtered, fallback applied
+    expect(
+      normalizeConfig({ enabledVariants: 'nope' as unknown as [] }).enabledVariants
+    ).toEqual(['holdem']);
+  });
 });
 
 describe('game creation', () => {
@@ -60,7 +86,7 @@ describe('game creation', () => {
     expect(s.events).toEqual([]);
     expect(s.eventSeq).toBe(0);
     expect(s.players['p0'].isHost).toBe(true);
-    expect(s.players['p0'].hasPlayed).toBe(false);
+    expect(s.choosing).toBeNull();
   });
 });
 
@@ -193,14 +219,47 @@ describe('startGame guards', () => {
   });
 });
 
+describe('ante posting', () => {
+  it('hand-started and antes-posted carry exact payloads; antes bypass round.committed', () => {
+    const t = new Table(3);
+    const res = t.tryApply({ type: 'startGame', byId: 'p0' });
+    const evs = okEvents(res);
+    expect(types(evs)).toEqual(['hand-started', 'antes-posted', 'turn']);
+    expect(data(evs[0])).toEqual({
+      handNo: 1,
+      variant: 'holdem',
+      variantName: "Texas Hold'em",
+      buttonSeat: 0,
+      inHand: ['p1', 'p2', 'p0'],
+    });
+    expect(data(evs[1])).toEqual({ amount: 1, playerIds: ['p1', 'p2', 'p0'], potTotal: 3 });
+    expect(data(evs[2])).toMatchObject({ playerId: 'p1', street: 'preflop' });
+    expect(t.hand.totalCommitted).toEqual({ p0: 1, p1: 1, p2: 1 });
+    expect(t.hand.round.committed).toEqual({});
+    expect(t.hand.round.currentBet).toBe(0);
+    expect(t.hand.round.lastFullRaiseSize).toBe(2); // minBet seeds the round
+    expect(t.hand.round.lastFullRaiseTo).toBe(0);
+  });
+
+  it('a short stack antes all-in at hand start and is skipped for turns', () => {
+    const t = new Table(3, { stacks: [20, 20, 1] });
+    t.start();
+    expect(t.hand.allIn).toEqual(['p2']);
+    expect(t.stack('p2')).toBe(0);
+    expect(t.hand.totalCommitted['p2']).toBe(1);
+    expect(data(eventsOf(t.state, 'antes-posted')[0]).potTotal).toBe(3);
+    expect(t.toAct).toBe('p1');
+  });
+});
+
 describe('playerAction guards', () => {
   it('rejects actions outside a live hand and out of turn', () => {
     const t = new Table(3);
-    expectError(t.tryAct('p0', 'call'), 'bad-phase'); // lobby
+    expectError(t.tryAct('p1', 'check'), 'bad-phase'); // lobby
     t.start();
-    expectError(t.tryAct('p1', 'call'), 'not-your-turn');
+    expectError(t.tryAct('p2', 'check'), 'not-your-turn'); // p1 opens
     t.foldAround();
-    expectError(t.tryAct('p2', 'check'), 'bad-phase'); // hand-over, hand object still present
+    expectError(t.tryAct('p0', 'check'), 'bad-phase'); // hand-over, hand object still present
   });
 });
 
@@ -213,7 +272,7 @@ describe('timeout', () => {
     expectError(t.tryApply({ type: 'timeout' }), 'bad-phase');
   });
 
-  it('fires exactly at the deadline: bank arms once with payload, then auto-folds', () => {
+  it('fires exactly at the deadline: bank arms once with payload, then auto-checks', () => {
     const t = new Table(3);
     t.start();
     const d0 = t.hand.round.actionDeadline!;
@@ -221,30 +280,46 @@ describe('timeout', () => {
     const res = t.tryApply({ type: 'timeout' });
     const evs = okEvents(res);
     expect(types(evs)).toEqual(['time-bank']);
-    expect(data(evs[0])).toEqual({ playerId: 'p0', extraMs: 10_000 });
+    expect(data(evs[0])).toEqual({ playerId: 'p1', extraMs: 10_000 });
     expect(t.hand.round.timeBankArmed).toBe(true);
     expect(t.hand.round.actionDeadline).toBe(d0 + 10_000);
-    expect(t.toAct).toBe('p0');
+    expect(t.toAct).toBe('p1');
 
     t.now = t.hand.round.actionDeadline! + 1;
     const res2 = t.tryApply({ type: 'timeout' });
     const evs2 = okEvents(res2);
+    // Preflop is check-or-bet: the free option auto-checks, never folds.
     expect(types(evs2)).toEqual(['action', 'player-away', 'turn']);
     expect(data(evs2[0])).toEqual({
-      playerId: 'p0',
-      move: 'fold',
+      playerId: 'p1',
+      move: 'check',
       amount: 0,
       street: 'preflop',
       auto: true,
     });
-    expect(data(evs2[1])).toEqual({ playerId: 'p0' });
+    expect(data(evs2[1])).toEqual({ playerId: 'p1' });
   });
 
-  it('with timeBankMs 0 the first expiry auto-folds without arming a bank', () => {
+  it('facing a bet the final expiry auto-folds', () => {
+    const t = new Table(3);
+    t.start();
+    t.act('p1', 'bet', 2);
+    t.now = t.hand.round.actionDeadline! + 1;
+    t.apply({ type: 'timeout' }); // p2's bank
+    t.now = t.hand.round.actionDeadline! + 1;
+    const evs = okEvents(t.tryApply({ type: 'timeout' }));
+    expect(data(evs[0])).toMatchObject({ playerId: 'p2', move: 'fold', auto: true });
+    expect(t.hand.folded).toContain('p2');
+    expect(t.state.players['p2'].status).toBe('away');
+    expect(t.toAct).toBe('p0');
+  });
+
+  it('with timeBankMs 0 the first expiry auto-resolves without arming a bank', () => {
     const t = new Table(2, { config: { timeBankMs: 0 } });
     t.start();
+    t.act('p1', 'bet', 2);
     t.now = t.hand.round.actionDeadline! + 1;
-    t.apply({ type: 'timeout' });
+    t.apply({ type: 'timeout' }); // p0 faces a bet: instant fold, no bank
     expect(types(t.state.events)).not.toContain('time-bank');
     expect(t.hand.folded).toContain('p0');
     expect(t.state.players['p0'].status).toBe('away');
@@ -269,7 +344,7 @@ describe('nextHand', () => {
   it('a heads-up fold win takes the normal 2.5s pause, not a rebuy window', () => {
     const t = new Table(2);
     t.start();
-    t.act('p0', 'fold');
+    t.act('p1', 'fold');
     expect(t.state.nextHandAt).toBe(t.now + 2500);
     expect(types(t.state.events)).not.toContain('top-up-window');
   });
@@ -287,7 +362,7 @@ describe('pause and resume', () => {
   it('pausing between hands pauses immediately; resume schedules the next deal', () => {
     const t = new Table(2);
     t.start();
-    t.act('p0', 'fold');
+    t.act('p1', 'fold');
     expect(t.state.phase).toBe('hand-over');
     const res = t.tryApply({ type: 'pause', byId: 'p0' });
     expect(types(okEvents(res))).toEqual(['paused']);
@@ -327,7 +402,7 @@ describe('endGame', () => {
   it('ending after a completed hand does not double-refund the pot', () => {
     const t = new Table(2);
     t.start();
-    t.act('p0', 'fold'); // hand resolved: pot already paid out
+    t.act('p1', 'fold'); // hand resolved: pot already paid out
     t.apply({ type: 'endGame', byId: 'p0' });
     expect(t.stack('p0') + t.stack('p1')).toBe(40);
   });
@@ -346,14 +421,13 @@ describe('kick', () => {
     const d0 = t.hand.round.actionDeadline!;
     t.now += 5000;
     t.apply({ type: 'kick', byId: 'p0', playerId: 'p2' });
-    expect(t.toAct).toBe('p0');
+    expect(t.toAct).toBe('p1');
     expect(t.hand.round.actionDeadline).toBe(d0);
   });
 
   it('kicking the acting player folds them, advances the turn, restamps the clock', () => {
     const t = new Table(3);
     t.start();
-    t.act('p0', 'call');
     expect(t.toAct).toBe('p1');
     t.now += 3000;
     const res = t.tryApply({ type: 'kick', byId: 'p0', playerId: 'p1' });
@@ -388,24 +462,22 @@ describe('leave', () => {
   it('leaving after the hand ended does not fold into the finished hand', () => {
     const t = new Table(3);
     t.start();
-    t.foldAround(); // p0 and p1 fold; p2 wins
+    t.foldAround(); // p1 and p2 fold; p0 wins
     const foldedBefore = [...t.hand.folded];
-    const res = t.tryApply({ type: 'leave', playerId: 'p2' });
+    const res = t.tryApply({ type: 'leave', playerId: 'p0' });
     expect(types(okEvents(res))).toEqual(['player-removed']);
     expect(t.hand.folded).toEqual(foldedBefore);
   });
 
   it('a player who shoved and left before showdown finishes as left, not busted', () => {
     const t = new Table(4, { stacks: [50, 50, 6, 50] });
-    t.start();
+    t.start(); // antes: p2 has 5 behind
     t.rig(
       { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'], p3: ['3c', '8d'] },
       ['4h', '9s', 'Jd', 'Qc', '6h']
     );
-    t.act('p3', 'call');
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.act('p2', 'raise', 6); // BB all-in, full raise
+    t.act('p1', 'check');
+    t.act('p2', 'bet', 5); // all-in, a full opening bet
     t.act('p3', 'call');
     t.act('p0', 'call');
     t.act('p1', 'call');
@@ -461,7 +533,6 @@ describe('addBot', () => {
     const bot = Object.values(t.state.players).find((p) => p.isBot)!;
     expect(data(evs[0])).toMatchObject({ playerId: bot.id, seat: 1, isBot: true });
     expect(bot.isHost).toBe(false);
-    expect(bot.hasPlayed).toBe(false);
     // randInt(n) => n-1: 0.3 + 39/100, 0.3 + 49/100, 0.05 + 19/100
     expect(bot.bot!.tightness).toBeCloseTo(0.69, 6);
     expect(bot.bot!.aggression).toBeCloseTo(0.79, 6);
@@ -498,10 +569,10 @@ describe('imBack', () => {
     const res = t.tryApply({ type: 'imBack', playerId: 'p2' });
     expect(okEvents(res)).toEqual([]);
     expect(t.hand.round.actionDeadline).toBe(d0);
-    const res2 = t.tryApply({ type: 'imBack', playerId: 'p0' }); // the acting player
+    const res2 = t.tryApply({ type: 'imBack', playerId: 'p1' }); // the acting player
     expect(okEvents(res2)).toEqual([]);
     expect(t.hand.round.actionDeadline).toBe(d0);
-    const res3 = t.tryAct('p0', 'call');
+    const res3 = t.tryAct('p1', 'check');
     expect(types(okEvents(res3))).toEqual(['action', 'turn']); // no spurious player-back
   });
 
@@ -511,25 +582,25 @@ describe('imBack', () => {
     t.now = t.hand.round.actionDeadline! + 1;
     t.apply({ type: 'timeout' });
     t.now = t.hand.round.actionDeadline! + 1;
-    t.apply({ type: 'timeout' }); // p0 away
+    t.apply({ type: 'timeout' }); // p1 away
     t.apply({ type: 'endGame', byId: 'p0' });
     expect(t.state.hand).toBeNull();
-    t.apply({ type: 'imBack', playerId: 'p0' });
-    expect(t.state.players['p0'].status).toBe('seated');
+    t.apply({ type: 'imBack', playerId: 'p1' });
+    expect(t.state.players['p1'].status).toBe('seated');
   });
 });
 
 describe('away players', () => {
   it('on the clock get an instant deadline; imBack grants a fresh clock', () => {
-    const t = awayP0OnTurn();
+    const t = awayP1OnTurn();
     expect(t.hand.round.actionDeadline).toBe(t.now);
     expect(t.hand.round.timeBankArmed).toBe(true);
     expect(t.hand.round.botActAt).toBeNull();
-    const res = t.tryApply({ type: 'imBack', playerId: 'p0' });
+    const res = t.tryApply({ type: 'imBack', playerId: 'p1' });
     const evs = okEvents(res);
     expect(types(evs)).toEqual(['player-back']);
-    expect(data(evs[0])).toEqual({ playerId: 'p0' });
-    expect(t.state.players['p0'].status).toBe('seated');
+    expect(data(evs[0])).toEqual({ playerId: 'p1' });
+    expect(t.state.players['p1'].status).toBe('seated');
     expect(t.hand.round.actionDeadline).toBe(t.now + 20_000);
     expect(t.hand.round.timeBankArmed).toBe(false);
   });
@@ -540,34 +611,32 @@ describe('away players', () => {
     t.now = t.hand.round.actionDeadline! + 1;
     t.apply({ type: 'timeout' });
     t.now = t.hand.round.actionDeadline! + 1;
-    t.apply({ type: 'timeout' }); // p0 away
-    t.act('p1', 'fold');
-    t.nextHand();
-    expect(t.toAct).toBe('p1');
+    t.apply({ type: 'timeout' }); // p1 auto-checked + away; p2 now acts
+    expect(t.toAct).toBe('p2');
     const d0 = t.hand.round.actionDeadline!;
     t.now += 3000;
-    const res = t.tryApply({ type: 'imBack', playerId: 'p0' });
+    const res = t.tryApply({ type: 'imBack', playerId: 'p1' });
     expect(types(okEvents(res))).toEqual(['player-back']);
     expect(t.hand.round.actionDeadline).toBe(d0);
   });
 
   it('acting on their own restores them with a player-back event', () => {
-    const t = awayP0OnTurn();
-    const res = t.tryAct('p0', 'check');
+    const t = awayP1OnTurn();
+    const res = t.tryAct('p1', 'check');
     const evs = okEvents(res);
     expect(types(evs)[0]).toBe('player-back');
-    expect(data(evs[0])).toEqual({ playerId: 'p0' });
-    expect(t.state.players['p0'].status).toBe('seated');
+    expect(data(evs[0])).toEqual({ playerId: 'p1' });
+    expect(t.state.players['p1'].status).toBe('seated');
     expect(t.hand.round.street).toBe('flop');
   });
 
   it('timing out again resolves the turn without a duplicate player-away', () => {
-    const t = awayP0OnTurn();
+    const t = awayP1OnTurn();
     expect(eventsOf(t.state, 'player-away')).toHaveLength(1);
     t.apply({ type: 'timeout' }); // instant deadline already due
     expect(eventsOf(t.state, 'player-away')).toHaveLength(1);
-    expect(t.state.players['p0'].status).toBe('away');
-    expect(t.hand.folded).not.toContain('p0'); // BB option was a free check
+    expect(t.state.players['p1'].status).toBe('away');
+    expect(t.hand.folded).not.toContain('p1'); // the check was free
     expect(t.hand.round.street).toBe('flop');
   });
 });
@@ -578,19 +647,26 @@ describe('bot turns and timeouts', () => {
     t.apply({ type: 'addBot', byId: 'p0' });
     const botId = Object.keys(t.state.players).find((id) => id !== 'p0')!;
     t.start();
+    // Bot (left of the button) opens: bot stamp, fallback deadline.
+    expect(t.toAct).toBe(botId);
+    expect(t.hand.round.botActAt).toBe(t.now + 800); // zeroRand: no jitter
+    expect(t.hand.round.actionDeadline).toBe(t.now + 800 + 10_000);
+    t.act(botId, 'check');
     // Human turn: standard clock, no bot stamp.
     expect(t.toAct).toBe('p0');
     expect(t.hand.round.botActAt).toBeNull();
     expect(t.hand.round.actionDeadline).toBe(t.now + 20_000);
     t.randInt = () => 7;
-    t.act('p0', 'call');
+    t.act('p0', 'check'); // closes preflop; flop turn goes to the bot
+    expect(t.hand.round.street).toBe('flop');
     expect(t.toAct).toBe(botId);
     expect(t.hand.round.botActAt).toBe(t.now + 800 + 7);
     expect(t.hand.round.actionDeadline).toBe(t.now + 800 + 7 + 10_000);
     t.now = t.hand.round.actionDeadline!;
-    t.apply({ type: 'timeout' }); // bot auto-checks its BB option
+    t.apply({ type: 'timeout' }); // fallback: bot auto-checks, never goes away
     expect(t.state.players[botId].status).toBe('seated');
     expect(eventsOf(t.state, 'player-away')).toHaveLength(0);
+    expect(t.toAct).toBe('p0');
     expect(t.hand.round.street).toBe('flop');
   });
 
@@ -600,7 +676,8 @@ describe('bot turns and timeouts', () => {
     const botId = Object.keys(t.state.players).find((id) => id !== 'p0')!;
     t.start();
     t.rig({ p0: ['As', 'Ah'], [botId]: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-    t.act('p0', 'raise', 20);
+    t.act(botId, 'check');
+    t.act('p0', 'bet', 19); // all-in over the ante
     t.randInt = () => 5;
     t.act(botId, 'call');
     expect(t.state.players[botId].status).toBe('busted');
@@ -621,14 +698,13 @@ describe('topUp', () => {
   it('with an exhausted schedule is illegal even while the game continues', () => {
     const t = new Table(3, { stacks: [50, 50, 4] });
     t.state.players['p2'].topUpsUsed = 2;
-    t.start();
+    t.start(); // antes: p2 has 3 behind
     t.rig(
       { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] },
       ['4h', '9s', 'Jd', 'Qc', '6h']
     );
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.act('p2', 'raise', 4); // all-in
+    t.act('p1', 'check');
+    t.act('p2', 'bet', 3); // all-in
     t.act('p0', 'call');
     t.act('p1', 'call');
     t.checkDown();
@@ -644,9 +720,8 @@ describe('topUp', () => {
       { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] },
       ['4h', '9s', 'Jd', 'Qc', '6h']
     );
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.act('p2', 'raise', 4);
+    t.act('p1', 'check');
+    t.act('p2', 'bet', 3);
     t.act('p0', 'call');
     t.act('p1', 'call');
     t.checkDown();
@@ -692,9 +767,8 @@ describe('busting bookkeeping', () => {
       { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] },
       ['4h', '9s', 'Jd', 'Qc', '6h']
     );
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.act('p2', 'raise', 4);
+    t.act('p1', 'check');
+    t.act('p2', 'bet', 3);
     t.act('p0', 'call');
     t.act('p1', 'call');
     t.checkDown();
@@ -708,34 +782,6 @@ describe('busting bookkeeping', () => {
   });
 });
 
-describe('dead small blind', () => {
-  it('a busted SB seat posts no small blind and the hand event reflects it', () => {
-    const t = new Table(4, { stacks: [50, 50, 2, 50] });
-    t.start(); // button 0, SB p1, BB p2 (all-in on the blind)
-    expect(t.hand.allIn).toContain('p2');
-    t.rig(
-      { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'], p3: ['3c', '8d'] },
-      ['4h', '9s', 'Jd', 'Qc', '6h']
-    );
-    t.act('p3', 'fold');
-    t.act('p0', 'call');
-    t.act('p1', 'fold'); // runout: p0 vs all-in p2, p2 busts
-    expect(t.state.players['p2'].status).toBe('busted');
-    const seq0 = t.state.eventSeq;
-    t.nextHand();
-    expect(t.hand.deadSb).toBe(true);
-    expect(t.hand.buttonSeat).toBe(1);
-    expect(t.hand.sbSeat).toBe(2);
-    expect(t.hand.bbSeat).toBe(3);
-    const after = t.state.events.filter((e) => e.seq > seq0);
-    const started = after.find((e) => e.type === 'hand-started')!;
-    expect(data(started).sbSeat).toBeNull();
-    const blinds = after.filter((e) => e.type === 'blind-posted');
-    expect(blinds).toHaveLength(1);
-    expect(data(blinds[0]).kind).toBe('big');
-  });
-});
-
 describe('full-hand event stream', () => {
   it('one bet-and-showdown hand emits the exact sequence with load-bearing payloads', () => {
     const t = new Table(3);
@@ -744,9 +790,9 @@ describe('full-hand event stream', () => {
     expect(t.hand.folded).toEqual([]);
     expect(t.hand.allIn).toEqual([]);
     expect(t.hand.round.actedSinceFullRaise).toEqual([]);
-    t.act('p0', 'call');
-    t.act('p1', 'call');
+    t.act('p1', 'check');
     t.act('p2', 'check');
+    t.act('p0', 'check');
     expect(t.hand.round.street).toBe('flop');
     expect(t.hand.round.actedSinceFullRaise).toEqual([]);
     t.act('p1', 'bet', 2);
@@ -757,31 +803,33 @@ describe('full-hand event stream', () => {
 
     const evs = t.state.events.filter((e) => e.seq > seq0);
     expect(types(evs)).toEqual([
-      'hand-started', 'blind-posted', 'blind-posted', 'turn',
+      'hand-started', 'antes-posted', 'turn',
       'action', 'turn', 'action', 'turn', 'action', 'street-dealt', 'turn',
       'action', 'turn', 'action', 'turn', 'action', 'street-dealt', 'turn',
       'action', 'turn', 'action', 'turn', 'action', 'street-dealt', 'turn',
       'action', 'turn', 'action', 'turn', 'action', 'hand-result',
     ]);
-    expect(data(evs[0])).toMatchObject({ handNo: 1, bbSeat: 2, inHand: ['p1', 'p2', 'p0'] });
-    expect(data(evs[1])).toEqual({ playerId: 'p1', amount: 1, kind: 'small' });
-    expect(data(evs[2])).toEqual({ playerId: 'p2', amount: 2, kind: 'big' });
-    expect(data(evs[3])).toMatchObject({ playerId: 'p0', street: 'preflop', deadline: NOW + 20_000 });
-    expect(data(evs[4])).toMatchObject({
-      playerId: 'p0', move: 'call', amount: 2, street: 'preflop', auto: false,
+    expect(data(evs[0])).toMatchObject({
+      handNo: 1, variant: 'holdem', buttonSeat: 0, inHand: ['p1', 'p2', 'p0'],
     });
-    expect(data(evs[9]).street).toBe('flop');
-    expect(data(evs[9]).cards).toHaveLength(3);
-    expect(data(evs[9]).board).toHaveLength(3);
-    expect(data(evs[11])).toMatchObject({ playerId: 'p1', move: 'bet', amount: 2, street: 'flop' });
-    expect(data(evs[16]).street).toBe('turn');
-    expect(data(evs[16]).cards).toHaveLength(1);
-    expect(data(evs[16]).board).toHaveLength(4);
-    expect(data(evs[23]).street).toBe('river');
-    expect(data(evs[23]).board).toHaveLength(5);
-    expect(data(evs[30])).toMatchObject({ handNo: 1, kind: 'showdown' });
-    expect(data(evs[30]).board).toHaveLength(5);
-    expect(data(evs[30]).pots[0].amount).toBe(12);
+    expect(data(evs[1])).toEqual({ amount: 1, playerIds: ['p1', 'p2', 'p0'], potTotal: 3 });
+    expect(data(evs[2])).toMatchObject({ playerId: 'p1', street: 'preflop', deadline: NOW + 20_000 });
+    expect(data(evs[3])).toMatchObject({
+      playerId: 'p1', move: 'check', amount: 0, street: 'preflop', auto: false,
+    });
+    expect(data(evs[8]).street).toBe('flop');
+    expect(data(evs[8]).cards).toHaveLength(3);
+    expect(data(evs[8]).board).toHaveLength(3);
+    expect(data(evs[10])).toMatchObject({ playerId: 'p1', move: 'bet', amount: 2, street: 'flop' });
+    expect(data(evs[15]).street).toBe('turn');
+    expect(data(evs[15]).cards).toHaveLength(1);
+    expect(data(evs[15]).board).toHaveLength(4);
+    expect(data(evs[22]).street).toBe('river');
+    expect(data(evs[22]).board).toHaveLength(5);
+    expect(data(evs[29])).toMatchObject({ handNo: 1, kind: 'showdown' });
+    expect(data(evs[29]).board).toHaveLength(5);
+    const pots = data(evs[29]).pots as { amount: number }[];
+    expect(pots[0].amount).toBe(9); // 3 antes + 3×2 on the flop
 
     // Nobody busted; the showdown pause is exactly 5s with no rebuy window.
     expect(types(evs)).not.toContain('player-busted');

@@ -11,12 +11,12 @@ import { dueSweepAction } from '../server/sweep';
 
 /** Heads-up all-in where p1 loses their whole stack to p0. */
 function bustP1HeadsUp(t: Table): void {
-  // Button (and SB) is seat 0 with zeroRand; p0 acts first preflop.
-  // Raise amounts are "raise TO" street totals, so an all-in shove is
-  // stack + already-committed blinds.
+  // Button is seat 0 with zeroRand; the non-button p1 opens every street.
+  // Bet amounts are "to" street totals; antes never touch round.committed,
+  // so an all-in shove is stack + already-committed street chips.
   t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-  t.act('p0', 'raise', t.stack('p0') + (t.hand.round.committed['p0'] ?? 0));
-  t.act('p1', 'call');
+  t.act('p1', 'bet', t.stack('p1') + (t.hand.round.committed['p1'] ?? 0));
+  t.act('p0', 'call');
   // Both all-in: streets run out automatically to showdown.
   expect(t.state.players['p1'].status).toBe('busted');
 }
@@ -49,7 +49,7 @@ describe('re-entry hold window', () => {
     // Don't make the winner sit out the rest of the 20s window.
     expect(t.state.nextHandAt).toBe(t.now + 5_000);
 
-    // Dealt straight into the next hand — no blind-arc sit-out.
+    // Dealt straight into the next hand.
     t.nextHand();
     expect(t.state.phase).toBe('playing');
     expect(t.hand.inHand).toContain('p1');
@@ -60,8 +60,8 @@ describe('re-entry hold window', () => {
     const t = new Table(2, { config: { topUps: 0 } });
     t.start();
     t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-    t.act('p0', 'raise', 20);
-    t.act('p1', 'call');
+    t.act('p1', 'bet', 19); // all-in over the ante
+    t.act('p0', 'call');
     expect(t.state.phase).toBe('ended');
     expect(t.state.endedReason).toBe('lastPlayer');
   });
@@ -99,11 +99,11 @@ describe('topUp validation', () => {
     const t = new Table(2);
     t.start();
     for (let rebuy = 0; rebuy < 2; rebuy++) {
-      // p1's stack varies per cycle; shove whatever they have.
+      // p1's stack varies per cycle; whoever opens shoves whatever they have.
       t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-      const sb = t.toAct!;
-      const other = sb === 'p0' ? 'p1' : 'p0';
-      t.act(sb, 'raise', t.stack(sb) + (t.hand.round.committed[sb] ?? 0));
+      const first = t.toAct!;
+      const other = first === 'p0' ? 'p1' : 'p0';
+      t.act(first, 'bet', t.stack(first) + (t.hand.round.committed[first] ?? 0));
       t.act(other, 'call');
       expect(t.state.players['p1'].status).toBe('busted');
       t.topUp('p1');
@@ -111,9 +111,9 @@ describe('topUp validation', () => {
     }
     // Third bust: no top-ups left → game just ends.
     t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-    const sb = t.toAct!;
-    const other = sb === 'p0' ? 'p1' : 'p0';
-    t.act(sb, 'raise', t.stack(sb) + (t.hand.round.committed[sb] ?? 0));
+    const first = t.toAct!;
+    const other = first === 'p0' ? 'p1' : 'p0';
+    t.act(first, 'bet', t.stack(first) + (t.hand.round.committed[first] ?? 0));
     t.act(other, 'call');
     expect(t.state.phase).toBe('ended');
     expectError(t.tryTopUp('p1'), 'bad-phase');
@@ -123,11 +123,10 @@ describe('topUp validation', () => {
 
   it('a busted spectator can top up mid-hand without touching the live hand', () => {
     const t = new Table(3, { stacks: [50, 50, 4] });
-    t.start(); // button 0, SB p1, BB p2
+    t.start(); // button 0, order p1, p2, p0; antes leave p2 with 3
     t.rig({ p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.act('p2', 'raise', 4); // all-in
+    t.act('p1', 'check');
+    t.act('p2', 'bet', 3); // all-in
     t.act('p0', 'call');
     t.act('p1', 'call');
     t.checkDown();
@@ -155,9 +154,9 @@ describe('multi-bust and leave interactions', () => {
   /** 3-handed all-in that busts p1 and p2, leaving p0 with everything. */
   function bustTwo(t: Table): void {
     t.rig({ p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-    t.act('p0', 'raise', 20);
-    t.act('p1', 'call');
+    t.act('p1', 'bet', 19); // all-in over the ante
     t.act('p2', 'call');
+    t.act('p0', 'call');
     expect(t.state.players['p1'].status).toBe('busted');
     expect(t.state.players['p2'].status).toBe('busted');
   }
@@ -190,9 +189,8 @@ describe('multi-bust and leave interactions', () => {
     const t = new Table(3, { stacks: [50, 50, 4] });
     t.start();
     t.rig({ p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.act('p2', 'raise', 4);
+    t.act('p1', 'check');
+    t.act('p2', 'bet', 3);
     t.act('p0', 'call');
     t.act('p1', 'call');
     t.checkDown();
@@ -227,7 +225,8 @@ describe('bot auto-top-up via the sweep', () => {
   it('stamps a think-delay deadline when a bot busts with a rebuy left', () => {
     const { t, botId } = tableWithBot();
     t.rig({ p0: ['As', 'Ah'], [botId]: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-    t.act('p0', 'raise', 20);
+    t.act(botId, 'check'); // the bot (non-button) opens
+    t.act('p0', 'bet', 19);
     t.act(botId, 'call');
     const bot = t.state.players[botId];
     expect(bot.status).toBe('busted');
@@ -260,7 +259,8 @@ describe('bot auto-top-up via the sweep', () => {
     const { t, botId } = tableWithBot();
     t.state.players[botId].topUpsUsed = 2; // schedule spent
     t.rig({ p0: ['As', 'Ah'], [botId]: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-    t.act('p0', 'raise', 20);
+    t.act(botId, 'check');
+    t.act('p0', 'bet', 19);
     t.act(botId, 'call');
     expect(t.state.phase).toBe('ended'); // nobody can rebuy → instant game over
     expect(t.state.players[botId].topUpAt).toBeNull();

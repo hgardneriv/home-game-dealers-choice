@@ -107,7 +107,7 @@ describe('store CAS pipeline', () => {
     const read = await withGame(gameId);
     if (!read.ok) throw new Error('read failed');
     // The sweep should have applied at least one bot action (an 'action' event
-    // exists beyond the blinds), possibly chaining further.
+    // exists beyond the antes), possibly chaining further.
     const actionEvents = read.state.events.filter((e) => e.type === 'action');
     expect(actionEvents.length).toBeGreaterThanOrEqual(1);
   });

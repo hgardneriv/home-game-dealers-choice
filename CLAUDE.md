@@ -1,52 +1,146 @@
 @AGENTS.md
 
-# Home Game Poker — session handoff & architecture notes
+# Home Game — Dealer's Choice: session handoff & architecture notes
 
-Link-based multiplayer Texas Hold'em (PokerNow-style) built July 2026. Fully working and **deployed to production**. This file is the context a future session needs to continue the work.
+Fork of `home-game-poker` (July 2026) converting the single-game Texas Hold'em app
+into ante-based **dealer's choice**: the dealer picks the game each hand from a
+host-enabled list. The approved build plan lives in the session plan file and as a
+claude.ai artifact; milestones: **M1** ante conversion + variant framework (DONE),
+**M2** dealer-pick flow, **M3** five-card draw, then stud/guts/baseball/in-between
+as parallel variant modules.
 
-## Deployment (live)
+## Deployment
 
-- **Production:** https://home-game-poker-kappa.vercel.app
-- Vercel project `home-game-poker` under team `hgardnerivs-projects`; deploy with `vercel deploy --prod` (CLI-based; deploys are NOT git-triggered).
-- Storage: Upstash Redis via Vercel Marketplace, resource `home-game-poker-redis`, **free plan** — upgrade to pay-as-you-go if game nights hit command limits (each SSE-connected client polls the version key every 500ms server-side).
-- Env vars (values live in Vercel, never in the repo): `SESSION_SECRET` (prod + preview), `KV_REST_API_URL`, `KV_REST_API_TOKEN`. ⚠️ The Marketplace names Redis vars `KV_REST_API_*`, NOT `UPSTASH_REDIS_REST_*` — `src/server/kv.ts` accepts both.
-- Preview deployments sit behind Vercel Authentication (not shareable with friends) — share/test on production.
-- Local dev without Redis env uses an in-memory KV automatically (single-process only). `vercel env pull .env.local` for real Redis locally.
+- **Not deployed yet.** The parent repo's Vercel project belongs to the old app.
+  After M2: create a new Vercel project + Upstash Redis resource + fresh
+  `SESSION_SECRET`, then `vercel deploy --prod` (deploys are CLI-based, never
+  git-triggered). Env names: `KV_REST_API_URL` / `KV_REST_API_TOKEN` (Marketplace
+  naming — `src/server/kv.ts` accepts both those and `UPSTASH_REDIS_REST_*`).
+- Local dev without Redis env uses an in-memory KV automatically (single-process).
 
-## Architecture (all decisions were deliberate — see rationale inline in code)
+## Architecture (decisions deliberate; rationale inline in code)
 
-- **Pure engine** (`src/engine/`): deterministic state machine, zero deps, no `Date.now()`/RNG inside — both injected via `ctx = { now, randInt }`. `applyAction(state, action, ctx)` never mutates its input (structuredClone at entry). `getLegalActions` is shared by server validation AND the client ActionBar so they can never disagree. Hand-rolled 7-card evaluator (best-of-21, packed integer scores).
-  - Rules covered & tested: heads-up blinds (button = SB, acts first preflop / last postflop), BB option, min-raise = last full raise size, short all-ins don't reopen betting (cumulative shorts do), layered side pots + uncalled-bet refunds, dead-button rotation (`computePositions` in `seating.ts`), blind-arc exclusion for mid-orbit joiners, showdown order + auto-muck, odd chip to first winner left of button.
-  - **Top-ups (rebuys)**: busted players re-buy on a decaying schedule — `topUpAmount` in `src/engine/topup.ts` (pure, shared by engine/sweep/client like `getLegalActions`): first = 60% of buy-in, each next shrinks by `config.topUpDecayPct`, amounts < 1 BB never offered. Config `topUps` (default 2, 0 disables) + `topUpDecayPct` (default 50) are host-form settable; **quick play forces `topUps: 0`** at the create route (`app/api/games/route.ts`). A game-deciding bust holds `hand-over` open ~20s (`settleOrHold` in engine.ts) so the loser can re-enter; busted bots auto-rebuy via the sweep after a think delay (`player.topUpAt`). `Player.totalBuyIn` drives game-over net math and the fuzz conservation invariant (Σ totalBuyIn). Legacy KV states work via nullish defaults. User confirmed the dead-button rule stays as-is (button may sit on an empty/busted seat for one hand — intentional).
-- **Bots** (`src/engine/bot.ts`): a bot is a Player with `isBot` + personality `{tightness, aggression, bluffFreq}`. Decides from a narrow `BotView` built from redacted data (can't cheat by construction). Defense curve: `required = min(0.72, 0.18 + potOdds*0.45 + tightness*0.1)`; flush/open-ended draw awareness on flop/turn; probabilistic bluff-catching. Tuning these constants is how you make bots looser/tighter.
-- **Storage** (`src/server/kv.ts`, `store.ts`): two Redis keys per game (`g:{id}:v` version, `g:{id}:s` state JSON, 24h TTL). ALL mutations flow through `withGame()` → read → sweep → user action → Lua-CAS write → retry (max 4). Version is monotonic; clients drop stale frames.
-- **Serverless timing** (`src/server/sweep.ts`): no background processes. Every state read runs the sweep: busted bot's `topUpAt` due → auto rebuy (checked first and re-validated in the sweep so a rejected due-action can never wedge the loop — `store.ts` breaks on the first failed sweep action); expired turn → timeout action (time bank once, then auto check/fold + away); bot's `botActAt` due → `decideForBot`; `nextHandAt` due → next hand. SSE ticks make these fire within ~1s. If no client is connected the game freezes until someone returns — intentional.
-- **Realtime**: SSE (`stream/route.ts`) — polls the version key every 500ms, pushes full redacted state with `id:<version>`, heartbeat 15s, self-closes at 240s (EventSource auto-reconnects with Last-Event-ID). WebSockets were deliberately rejected (no Upstash pub/sub over REST → WS would still poll). Client (`useGame.ts`): SSE + 10s safety poll + visibilitychange resync. ⚠️ A stream opened before the player joined is authenticated as nobody — after `join()` the client MUST reconnect the stream, and `applyState` refuses to let an anonymous frame downgrade an identified session (this fixed a nasty "guest bounced to join screen" bug).
-- **Identity** (`src/server/identity.ts`): per-game httpOnly cookie `hg_{gameId}` = `{playerId}.{HMAC-SHA256(playerId:gameId, SESSION_SECRET)}`. No accounts; refresh restores the seat.
-- **Redaction** (`src/server/redact.ts`): `ClientGameState` is a DISTINCT type from `GameState` so the compiler prevents ever serializing the deck / others' hole cards. Keep it that way.
-- **UI**: `GameRoom` → mode switch (join / waiting / left-kicked farewell / game-over standings / table). Table seats absolutely positioned from two coordinate maps (portrait/landscape via `useOrientation`), view rotated so YOUR seat is bottom-center. Motion animations; events ring buffer (cap 100) drives history + toasts. Numeric form fields keep raw strings while editing (mobile clear-field bug) — parse on submit.
-- **Visual design** (July 2026 pass, user-approved): mahogany wood rail (layered CSS gradients), deep emerald felt with dark suit-motif tile (data-URI SVG in `Table.tsx`), double gold pinstripe, gold "HOME GAME / TEXAS HOLD'EM" marquee with radial glow at 62% height. Cards are responsive SVG (`SIZE_CLASSES` in `PlayingCard.tsx`, bigger on `sm:`), ivory faces with mirrored corner indexes + ghost pip, navy lattice back with gold spade medallion. Face-up cards sit clear of nameplates (`showCards` margin in `Seat.tsx`); face-down backs tuck behind. Hero seat gets a gold-trimmed plaque.
-- ⚠️ **iOS GPU constraint**: NEVER add `backdrop-filter`/CSS `filter` to animated or frequently-repainting table elements, and animate transforms, not layout properties (the timer bar uses `scaleX`). A per-seat backdrop-blur + `width` animation combo caused full-device black-screen GPU hangs on an iPhone 14 (older iOS 16 WebKit). Static background gradients/data-URI SVGs are fine (rasterized once). Audio: one shared `AudioContext` unlocked on first `pointerdown` (`GameRoom.tsx`) — never create per-event contexts (they start suspended on iOS and leak).
+- **Pure engine** (`src/engine/`): deterministic state machine, zero deps, no
+  `Date.now()`/RNG inside — both injected via `ctx = { now, randInt }`.
+  `applyAction(state, action, ctx)` never mutates its input (structuredClone at
+  entry). `getLegalActions` is shared by server validation AND the client
+  ActionBar so they can never disagree — it now returns a discriminated union
+  `BettingLegal | ExchangeLegal` on `kind`.
+- **Ante rules (replaced blinds July 2026, user-confirmed)**: every dealt-in
+  player antes `min(config.ante, stack)` into `totalCommitted` only (side pots
+  come out right via `buildPots` for free); every street opens check-or-bet with
+  `currentBet 0`, min open = `config.minBet` (default 2× ante, host knob); first
+  to act = left of button on EVERY street (no heads-up special case: non-button
+  first, button last). Button = `computeButton` in `seating.ts`: first hand
+  random eligible seat, then `nextEligibleSeat` — always an eligible player.
+  Dead button, dead SB, blind arc, `hasPlayed`, `prevBbSeat` all deleted with
+  the blinds.
+- **Variant framework** (`src/engine/variants/`): each game is a pure module
+  implementing `GameVariant` (`variants/types.ts`): metadata (name/marquee/
+  layoutHint/minPlayers/fitsPlayers), `deal`, `nextPhase` (returns
+  `PhasePlan = {kind: 'betting'|'exchange', street} | {kind:'showdown'}`),
+  `score`/`describeScore`, optional `exchange` (draw/declare/flip moves via
+  `VariantMoveInput`), optional `settle` (pot-matching for guts/in-between,
+  capped at table stakes), and `bot.decideBet`/`decideExchange`. State stores
+  only `hand.variant` (JSON-safe); the engine resolves modules via
+  `variants/registry.ts` (`IMPLEMENTED_VARIANTS`, `getVariant`,
+  `_registerVariantForTest` for stub variants in tests). `engine.ts`'s
+  `advance()` is a loop: round closes → `variant.nextPhase` → open round; a
+  betting phase with ≤1 actor auto-skips (that IS the all-in runout); exchange
+  phases walk `active()` (all-in players still draw). Hold'em lives in
+  `variants/holdem.ts` (~60 lines) — proof of how small a variant is.
+- **Cards**: `hand.playerCards[id] = { cards: Card[], faceUp: boolean[] }` —
+  per-card visibility supports stud up-cards and no-peek flips already.
+  `hand.discards` (secret) for draw games. `hand.vstate` is variant-private
+  JSON-safe scratch.
+- **Config** (`normalizeConfig` in engine.ts): `ante` (1..stack), `minBet`
+  (ante..stack, defaults 2×ante when omitted), `enabledVariants` (filtered to
+  registry, deduped, never empty — falls back `['holdem']`). Quick play forces
+  `topUps: 0` and all implemented variants at the create route.
+- **Bots** (`src/engine/bot.ts`): a bot decides from a narrow `BotView` built
+  from redacted data (can't cheat by construction; now includes `publicCards`
+  for future stud). The hold'em betting brain (`botDecide`, Chen preflop +
+  postflop eval + draw awareness) is wired via `holdem.bot.decideBet`;
+  `decideForBot` dispatches through the registry and legality-clamps. Defense
+  curve: `required = min(0.72, 0.18 + potOdds*0.45 + tightness*0.1)`.
+- **Top-ups**: unchanged from parent except the floor: amounts below `minBet`
+  are never offered (`topup.ts`). Quick play forces `topUps: 0`.
+- **Storage** (`src/server/kv.ts`, `store.ts`): two Redis keys per game
+  (version + state JSON, 24h TTL). ALL mutations flow through `withGame()` →
+  read → sweep → user action → Lua-CAS write → retry (max 4).
+- **Serverless timing** (`src/server/sweep.ts`): no background processes; every
+  read runs the sweep: busted-bot rebuy → bot turn (`botActAt`) → timeout
+  (time bank once, then auto check/fold — or the variant's `autoMove` on
+  exchange rounds — then away) → `nextHandAt` → next hand. M2 adds the
+  choosing-phase checks (bot dealer pick, `chooseTimeout`) BEFORE nextHand.
+- **Realtime**: SSE polling the version key every 500ms; heartbeat 15s;
+  self-closes 240s. After `join()` the client MUST reconnect the stream
+  (anonymous-frame downgrade guard in `useGame.applyState`).
+- **Identity** (`src/server/identity.ts`): per-game httpOnly cookie
+  `hg_{gameId}` = `{playerId}.{HMAC-SHA256(playerId:gameId, SESSION_SECRET)}`.
+- **Redaction** (`src/server/redact.ts`): `ClientGameState` is a DISTINCT type
+  from `GameState` so the compiler prevents serializing `deck`, `discards`,
+  `vstate`, or face-down `playerCards`. Clients get `myCards: Card[]`,
+  `publicCards` (face-up only), `cardCounts` (for rendering backs),
+  `choosing`. Keep the type separation.
+- **UI**: `GameRoom` mode switch → `Table` (marquee text = variant's `marquee`,
+  "DEALER'S CHOICE" between games; board slots only for `layoutHint: 'board'`)
+  → `Seat` (renders `cardCounts` backs + `publicCards` face-up + `myCards`/
+  `revealed` arrays) → `ActionBar` (renders purely from `legalActions`;
+  exchange-round UI arrives with M3; M2 adds the dealer's pick branch).
+  `CreateGame` has Ante/Min-bet fields + enabled-games checklist (never empty).
+- ⚠️ **iOS GPU constraint** (inherited, still binding): NEVER add
+  `backdrop-filter`/CSS `filter` to animated or frequently-repainting table
+  elements; animate transforms, not layout. One shared `AudioContext` unlocked
+  on first `pointerdown` — never per-event contexts.
+- **Dealer's-choice actions**: `chooseGame`/`chooseTimeout` exist in the Action
+  union but fail `bad-phase` until M2 wires the `choosing` GamePhase
+  (`GameState.choosing: ChoosingState | null` is already in the state and
+  redaction). Auto-pick policy (user-confirmed): repeat previous variant, else
+  first enabled; absent human dealer goes away like a betting timeout.
 
 ## Testing
 
-`npm test` — 281 Vitest tests. The engine suite is the correctness spine (every rule edge above has a scenario test), plus **fuzz**: 150 seeded complete games mixing bot and random-legal actors with invariants (chip conservation vs Σ totalBuyIn, top-up schedule adherence, no negative stacks, termination) checked after every action; the fuzz harness randomly injects top-ups. `Table` harness in `src/engine/test-utils.ts` (zeroRand → deterministic button at seat 0; `rig()` to plant hole/board cards; `topUp()`). Server CAS concurrency tests use `MemoryKV`. When touching engine logic, add a scenario test first; the fuzz will catch conservation breaks.
+`npm test` — Vitest. The engine suite is the correctness spine (ante posting,
+short-ante side pots, first-to-act, min-raise/short-all-in reopening, button
+rotation, top-up schedule), plus **fuzz**: 150 seeded complete games mixing bot
+and random-legal actors with invariants (chip conservation vs Σ totalBuyIn, no
+negative stacks, termination) checked after every action. `Table` harness in
+`src/engine/test-utils.ts` (zeroRand → first-hand button at lowest eligible
+seat; `rig(playerCards, board)` plants cards; `legalFor` returns narrowed
+`BettingLegal`). Server CAS tests use `MemoryKV` via `globalThis.__gameKV`.
+When touching engine logic, add a scenario test first; fuzz catches
+conservation breaks. Mutation testing: `npx stryker run` (engine+server,
+`bot.ts` excluded) — re-harden after M3; expect a dip until then. Cache-bust
+with `rm -rf reports .stryker-tmp` after changing tests.
 
-**Mutation testing** (added July 2026): `npx stryker run` — config in `stryker.conf.json` (mutates `src/engine` + `src/server`; `bot.ts` excluded, its personality constants are tuning not spec). Uses `vitest.stryker.config.ts`, which excludes the 23s fuzz suite from mutant checking. Suite was hardened to **91.2% kill rate** via `*.hardening.test.ts` files (plus first-ever `identity`/`redact`/`api` server tests — auth and information-leak boundaries are pinned). The ~150 remaining survivors are documented equivalents (proofs in the `test(mutate):` commit messages) and accepted noise (error-message prose, Redis-only kv internals). Full run ≈ 30s. Don't trust `reports/stryker-incremental.json` across iterations after changing tests — cache-bust with `rm -rf reports .stryker-tmp`.
-
-Browser-automation caveat: an occluded Chrome window gets no rAF, so Motion animations freeze at initial values in screenshots — that's the tool environment, not a bug.
+Browser-automation caveat: an occluded Chrome window gets no rAF, so Motion
+animations freeze in screenshots — tool environment, not a bug.
 
 ## Conventions & gotchas
 
 - Bet/raise amounts are **"raise TO" street totals**, not increments.
-- `globalThis.__gameKV` singleton survives dev HMR — after editing `kv.ts`, restart `next dev`.
-- `next.config.ts` pins `turbopack.root` (stray lockfile in $HOME confuses inference).
-- All API routes are `dynamic = 'force-dynamic'`, Node runtime (never edge). Stream route sets `maxDuration = 300`.
+- `globalThis.__gameKV` singleton survives dev HMR — restart `next dev` after
+  editing `kv.ts`.
+- `next.config.ts` pins `turbopack.root`.
+- All API routes `dynamic = 'force-dynamic'`, Node runtime. Stream route
+  `maxDuration = 300`.
 - No git-triggered deploys; run tests before `vercel deploy --prod`.
-- `.claude/settings.local.json` is gitignored (personal permissions). `.env.local` / `.vercel` never committed.
+- `.claude/settings.local.json` gitignored; `.env.local` / `.vercel` never
+  committed.
 
-## Roadmap (user-confirmed direction)
+## Roadmap (user-confirmed)
 
-1. **Public lobby with matchmaking** — architecture is ready: rooms are self-contained under `g:{id}:*`; a lobby is an index (e.g. `lobby:open` sorted set) + a browse page + a create-path flag. Bots need zero changes. The game-over screen's "Play again" is where "Back to lobby" will live.
-2. Possible smaller items: escalating blinds option, run-it-twice, four-color deck, sounds toggle, bot difficulty setting, dimmed "dead button" visual hint when the button sits on an empty/busted seat (user declined for now but may revisit if friends find it confusing). (Top-ups/rebuys: DONE July 2026.)
-3. User play-tests with real friends and reports tweaks — expect rapid small iterations (bot tuning constants, UX affordances). After engine changes, consider a `/mutate`-style hardening pass (see Testing) to keep the kill rate up.
+1. **M2 — dealer-pick flow**: `choosing` phase between hands when >1 variant
+   enabled (skip when 1), `chooseGame`/`chooseTimeout` handlers, sweep checks,
+   ActionBar pick UI, dealer disc from `choosing.buttonSeat`.
+2. **M3 — five-card draw** (`variants/five-draw.ts`): 5 down → bet → discard
+   0–3 (user-confirmed, no 4-with-ace) → bet → showdown `evaluate5`; exchange
+   UI (tap-to-select + Discard/Stand pat); bot draw policy; then a mutation
+   hardening pass over M1–M3.
+3. **Variant fan-out** (parallelizable, one agent per module once M2+M3 prove
+   the interface): 7-stud (faceUp deals, maybe highest-board first-to-act),
+   guts (declare + `settle` + carry-pot & fuzz invariant update), baseball
+   (flip turns; needs wild-card evaluator + five-of-a-kind), in-between
+   (wager/pass vs pot; `score` unused).
+4. Deploy: new Vercel project + Redis + SESSION_SECRET after M2.

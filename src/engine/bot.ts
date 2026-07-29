@@ -2,23 +2,29 @@ import type { BotPersonality, Card, GameState, LegalActions, PlayerMove } from '
 import { rankValue, suitOf, type RandInt } from './deck';
 import { CATEGORY, evaluate5, evaluate7 } from './evaluator';
 import { getLegalActions } from './betting';
+import { getVariant } from './variants/registry';
 
 /**
- * NPC decision-making. A bot decides from a narrow view built here — hole
- * cards, board, pot and legal actions only — so it structurally cannot use
- * the deck or opponents' cards.
+ * NPC decision-making. A bot decides from a narrow view built here — its own
+ * cards, public cards, pot and legal actions only — so it structurally cannot
+ * use the deck or opponents' hidden cards. The per-variant betting brain lives
+ * on the variant module (`variant.bot`); this file holds the shared view
+ * builder, the hold'em strength heuristics, and the final legality clamp.
  */
 
 export interface BotView {
-  hole: [Card, Card];
+  /** The bot's own cards. */
+  hole: Card[];
   board: Card[];
+  /** Opponents' face-up cards (stud up-cards etc.); empty records otherwise. */
+  publicCards: Record<string, Card[]>;
   potTotal: number;
   stack: number;
   committed: number;
   legal: LegalActions;
   activeCount: number;
   personality: BotPersonality;
-  bigBlind: number;
+  minBet: number;
 }
 
 export interface BotDecision {
@@ -33,21 +39,28 @@ export function buildBotView(state: GameState, botId: string): BotView | null {
   if (!legal) return null;
   const player = state.players[botId];
   const potTotal = Object.values(hand.totalCommitted).reduce((a, b) => a + b, 0);
+  const publicCards: Record<string, Card[]> = {};
+  for (const [id, pc] of Object.entries(hand.playerCards)) {
+    if (id === botId) continue;
+    const up = pc.cards.filter((_, i) => pc.faceUp[i]);
+    if (up.length > 0) publicCards[id] = up;
+  }
   return {
-    hole: hand.holeCards[botId],
+    hole: [...hand.playerCards[botId].cards],
     board: [...hand.board],
+    publicCards,
     potTotal,
     stack: player.stack,
     committed: hand.round.committed[botId] ?? 0,
     legal,
     activeCount: hand.inHand.filter((id) => !hand.folded.includes(id)).length,
     personality: player.bot ?? { tightness: 0.5, aggression: 0.5, bluffFreq: 0.1 },
-    bigBlind: state.config.bigBlind,
+    minBet: state.config.minBet,
   };
 }
 
-/** Chen-formula-ish preflop strength, normalized to 0..1. */
-export function preflopStrength(hole: [Card, Card]): number {
+/** Chen-formula-ish preflop strength for two hole cards, normalized to 0..1. */
+export function preflopStrength(hole: Card[]): number {
   const [a, b] = hole;
   const va = rankValue(a);
   const vb = rankValue(b);
@@ -70,7 +83,7 @@ export function preflopStrength(hole: [Card, Card]): number {
 }
 
 /** Made-hand strength on the current board, 0..1. */
-export function postflopStrength(hole: [Card, Card], board: Card[]): number {
+export function postflopStrength(hole: Card[], board: Card[]): number {
   const cards = [...hole, ...board];
   const score = cards.length === 7 ? evaluate7(cards) : evaluate5(cards.slice(0, 5));
   const category = score >> 20;
@@ -98,7 +111,7 @@ export function postflopStrength(hole: [Card, Card], board: Card[]): number {
 }
 
 /** Four to a flush using at least one hole card. */
-export function hasFlushDraw(hole: [Card, Card], board: Card[]): boolean {
+export function hasFlushDraw(hole: Card[], board: Card[]): boolean {
   for (const suit of ['s', 'h', 'd', 'c']) {
     const total = [...hole, ...board].filter((c) => suitOf(c) === suit).length;
     const mine = hole.filter((c) => suitOf(c) === suit).length;
@@ -108,7 +121,7 @@ export function hasFlushDraw(hole: [Card, Card], board: Card[]): boolean {
 }
 
 /** Four consecutive ranks (open-ended) using at least one hole card. */
-export function hasOpenEndedDraw(hole: [Card, Card], board: Card[]): boolean {
+export function hasOpenEndedDraw(hole: Card[], board: Card[]): boolean {
   const holeValues = new Set(hole.map(rankValue));
   const values = [...new Set([...hole, ...board].map(rankValue))].sort((a, b) => a - b);
   for (let i = 0; i + 3 < values.length; i++) {
@@ -121,9 +134,11 @@ export function hasOpenEndedDraw(hole: [Card, Card], board: Card[]): boolean {
   return false;
 }
 
-/** Decide a legal move from the view. Deterministic given randInt. */
+/** Hold'em betting brain: decide a legal move from the view. Deterministic given randInt. */
 export function botDecide(view: BotView, randInt: RandInt): BotDecision {
-  const { legal, personality } = view;
+  const { personality } = view;
+  if (view.legal.kind !== 'betting') return { move: 'check' };
+  const legal = view.legal;
   const noise = (randInt(21) - 10) / 100; // ±0.10
   const raw =
     view.board.length === 0
@@ -138,7 +153,7 @@ export function botDecide(view: BotView, randInt: RandInt): BotDecision {
   const sizeBet = (): number => {
     // Between ~half pot and pot, shaped by aggression, clamped to legal range.
     const target = Math.round(
-      Math.max(view.bigBlind, (view.potTotal || view.bigBlind * 2) * (0.5 + personality.aggression * 0.5))
+      Math.max(view.minBet, (view.potTotal || view.minBet * 2) * (0.5 + personality.aggression * 0.5))
     );
     return Math.max(legal.minRaiseTo, Math.min(legal.maxRaiseTo, view.committed + target));
   };
@@ -172,21 +187,23 @@ export function botDecide(view: BotView, randInt: RandInt): BotDecision {
     return { move: 'call' };
   }
   // Cheap calls with live hands: never fold to a min bet with decent equity.
-  if (strength > 0.3 && callAmount <= view.bigBlind) {
+  if (strength > 0.3 && callAmount <= view.minBet) {
     return { move: 'call' };
   }
   return { move: 'fold' };
 }
 
-/** Convenience: full pipeline from game state to a decision. */
+/** Convenience: full pipeline from game state to a betting decision (betting rounds only). */
 export function decideForBot(
   state: GameState,
   botId: string,
   randInt: RandInt
 ): BotDecision | null {
+  const hand = state.hand;
+  if (!hand || hand.round.kind !== 'betting') return null;
   const view = buildBotView(state, botId);
-  if (!view) return null;
-  const decision = botDecide(view, randInt);
+  if (!view || view.legal.kind !== 'betting') return null;
+  const decision = getVariant(hand.variant).bot.decideBet(view, randInt);
   // Final legality clamp — a bot must never submit an illegal move.
   const legal = view.legal;
   if (decision.move === 'check' && !legal.canCheck) return { move: 'fold' };

@@ -15,6 +15,9 @@ import type { EngineCtx, GameState, PlayerMove } from './types';
  *   - buy-ins follow the top-up schedule exactly
  *   - no negative stacks or bets
  *   - every hand terminates
+ * Ante-era edge worth knowing: an ante equal to a player's whole stack antes
+ * them all-in, and a hand where EVERYONE is all-in from antes auto-runs to
+ * showdown with no turns at all — both are correct and covered here.
  */
 
 function totalChips(state: GameState): number {
@@ -45,7 +48,7 @@ function checkInvariants(state: GameState): void {
   if (state.hand && !state.hand.result) {
     const r = state.hand.round;
     for (const v of Object.values(r.committed)) expect(v).toBeGreaterThanOrEqual(0);
-    if (r.toAct) {
+    if (r.toAct && r.kind === 'betting') {
       expect(state.hand.folded).not.toContain(r.toAct);
       expect(state.hand.allIn).not.toContain(r.toAct);
     }
@@ -57,7 +60,9 @@ function randomLegalMove(
   playerId: string,
   randInt: (n: number) => number
 ): { move: PlayerMove; amount?: number } {
-  const legal = getLegalActions(state, playerId)!;
+  const legal = getLegalActions(state, playerId);
+  if (!legal || legal.kind !== 'betting')
+    throw new Error(`expected betting legal actions for ${playerId}`);
   const options: { move: PlayerMove; amount?: number }[] = [];
   if (legal.canCheck) options.push({ move: 'check' }, { move: 'check' });
   if (legal.callAmount > 0) options.push({ move: 'call' }, { move: 'call' });
@@ -78,12 +83,15 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
   let now = 1_000_000;
   const ctx = (): EngineCtx => ({ now, randInt });
 
+  const ante = 1 + randInt(3); // 1..3
   let state = createGame({
     id: `fuzz${seed}`,
     hostId: 'p0',
     hostName: 'P0',
     config: {
       startingStack: 20 + randInt(30),
+      ante,
+      minBet: ante + randInt(3 * ante + 1), // ante..4×ante
       topUps: randInt(4),
       topUpDecayPct: [0, 25, 50, 100][randInt(4)],
     },
@@ -172,7 +180,8 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
     const actorIndex = Number(acting.slice(1));
     const useBotBrain = (botMask >> actorIndex) & 1;
     const decision = useBotBrain
-      ? decideForBot(state, acting, randInt)!
+      ? // decideForBot only returns null off betting rounds — hold'em has none.
+        (decideForBot(state, acting, randInt) ?? randomLegalMove(state, acting, randInt))
       : randomLegalMove(state, acting, randInt);
 
     // Occasionally let the timer fire instead of acting.

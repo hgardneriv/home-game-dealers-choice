@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Home Game Poker",
-  description: "Texas Hold'em with friends — share a link, take a seat.",
+  title: "Home Game — Dealer's Choice",
+  description:
+    "Poker night with friends — share a link, take a seat, and the dealer calls the game.",
 };
 
 export default function RootLayout({

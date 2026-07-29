@@ -8,9 +8,9 @@ function describeEvent(event: GameEvent, names: (id: string) => string): string 
   const d = event.data as Record<string, unknown>;
   switch (event.type) {
     case 'hand-started':
-      return `— Hand #${d.handNo} —`;
-    case 'blind-posted':
-      return `${names(String(d.playerId))} posts ${d.kind} blind $${d.amount}`;
+      return `— Hand #${d.handNo}: ${String(d.variantName ?? '')} —`;
+    case 'antes-posted':
+      return `Everyone antes $${d.amount}`;
     case 'action': {
       const move = String(d.move);
       const auto = d.auto ? ' (auto)' : '';

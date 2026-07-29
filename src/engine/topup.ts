@@ -2,8 +2,8 @@ import type { TableConfig } from './types';
 
 /**
  * Chips granted by a player's next top-up, or 0 when none remains — exhausted,
- * disabled, legacy game with no top-up config, or decayed below one big blind
- * (a stack that can't even post the BB is dead on arrival).
+ * disabled, legacy game with no top-up config, or decayed below the minimum
+ * bet (a stack that can't even open is dead on arrival).
  *
  * First top-up is 60% of the buy-in; each later one shrinks by topUpDecayPct.
  * Every amount is computed from the (rounded) first — not iteratively
@@ -22,5 +22,5 @@ export function topUpAmount(config: TableConfig, topUpsUsed: number): number {
   const first = Math.round(0.6 * config.startingStack);
   const decay = 1 - (config.topUpDecayPct ?? 50) / 100;
   const amount = Math.round(first * Math.pow(decay, used));
-  return amount >= config.bigBlind ? amount : 0;
+  return amount >= config.minBet ? amount : 0;
 }

@@ -43,7 +43,7 @@ export async function POST(
   const result = await withGame(gameId, (state) => {
     if (move === 'call' && expectedCall !== null) {
       const legal = getLegalActions(state, playerId);
-      if (legal && legal.callAmount !== expectedCall) {
+      if (legal && legal.kind === 'betting' && legal.callAmount !== expectedCall) {
         return {
           reject: {
             code: 'stale-action',

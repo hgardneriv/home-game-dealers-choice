@@ -184,7 +184,7 @@ export function GameRoom({ gameId }: { gameId: string }) {
           <div className="flex items-baseline gap-2">
             <span className="font-semibold">🃏 Home Game</span>
             <span className="text-xs text-white/50">
-              ${state.config.smallBlind}/${state.config.bigBlind}
+              Ante ${state.config.ante} · min ${state.config.minBet}
               {state.hand ? ` · hand #${state.hand.handNo}` : ''}
             </span>
           </div>

@@ -13,12 +13,12 @@ import { dueSweepAction } from './sweep';
  * then surgically mutated to reach the guard branches.
  */
 
-/** Heads-up human table, mid-hand: p0 (human) to act, no bot deadlines. */
+/** Heads-up human table, mid-hand: p1 (left of button p0) to act, no bot deadlines. */
 function playingHumans(): Table {
   const t = new Table(2);
   t.start();
   expect(t.state.phase).toBe('playing');
-  expect(t.toAct).toBe('p0');
+  expect(t.toAct).toBe('p1');
   return t;
 }
 
@@ -26,19 +26,18 @@ function playingHumans(): Table {
 function humanHandOver(): Table {
   const t = new Table(2);
   t.start();
-  t.act('p0', 'fold');
+  t.act('p1', 'fold');
   expect(t.state.phase).toBe('hand-over');
   expect(t.state.nextHandAt).not.toBeNull();
   return t;
 }
 
-/** Host + bot, mid-hand with the BOT to act (botActAt stamped). */
+/** Host + bot, mid-hand with the BOT to act (botActAt stamped at the deal). */
 function botToAct(): { t: Table; botId: string } {
   const t = new Table(1);
   t.apply({ type: 'addBot', byId: 'p0' });
   const botId = Object.keys(t.state.players).find((id) => id !== 'p0')!;
-  t.start();
-  t.act('p0', 'call'); // SB completes; bot (BB) to act
+  t.start(); // bot sits left of the button (seat 1) and acts first
   expect(t.toAct).toBe(botId);
   expect(t.hand.round.botActAt).not.toBeNull();
   return { t, botId };
@@ -51,7 +50,8 @@ function bustedBotHandOver(): { t: Table; botId: string } {
   const botId = Object.keys(t.state.players).find((id) => id !== 'p0')!;
   t.start();
   t.rig({ p0: ['As', 'Ah'], [botId]: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
-  t.act('p0', 'raise', 20);
+  t.act(botId, 'check');
+  t.act('p0', 'bet', 19); // post-ante stacks are 19 — an all-in open
   t.act(botId, 'call');
   expect(t.state.phase).toBe('hand-over');
   expect(t.state.players[botId].status).toBe('busted');
@@ -97,7 +97,6 @@ describe('bot top-up: phase gating', () => {
       timeBankMs: 0,
       isHost: false,
       isBot: true,
-      hasPlayed: true,
       lastSeenAt: t.now,
       totalBuyIn: 20,
       topUpsUsed: 0,
@@ -133,7 +132,8 @@ describe('bot top-up: re-validation guards', () => {
     t.apply({ type: 'addBot', byId: 'p0' });
     const botId = Object.keys(t.state.players).find((id) => id !== 'p0')!;
     t.start();
-    t.act('p0', 'fold'); // hand-over, bot still seated with chips
+    t.act(botId, 'fold'); // hand-over, bot still seated with chips
+    expect(t.state.phase).toBe('hand-over');
     t.state.players[botId].topUpAt = t.now - 1;
     expect(dueSweepAction(t.state, t.now, t.randInt)).toBeNull();
   });

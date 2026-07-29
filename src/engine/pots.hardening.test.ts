@@ -9,20 +9,20 @@ import type { HandState } from './types';
 
 const mkHand = (over: Partial<HandState>): HandState => ({
   handNo: 1,
+  variant: 'holdem',
   deck: [],
   deckPos: 0,
   buttonSeat: 0,
-  sbSeat: 1,
-  deadSb: false,
-  bbSeat: 2,
-  holeCards: {},
+  playerCards: {},
   board: [],
+  discards: [],
   inHand: [],
   folded: [],
   allIn: [],
   totalCommitted: {},
   round: {
     street: 'river',
+    kind: 'betting',
     currentBet: 0,
     lastFullRaiseSize: 2,
     lastFullRaiseTo: 0,
@@ -34,6 +34,7 @@ const mkHand = (over: Partial<HandState>): HandState => ({
     timeBankArmed: false,
     botActAt: null,
   },
+  vstate: {},
   result: null,
   ...over,
 });
@@ -95,6 +96,25 @@ describe('buildPots hardening', () => {
     expect(built).toEqual({
       refunds: {},
       pots: [{ amount: 190, eligible: ['a', 'b'] }],
+    });
+  });
+
+  it('an ante-broke player forms the bottom layer: everyone contributes to it', () => {
+    // Ante era: 'c' could only ante 1 while 'a'/'b' anted 1 and bet on. The
+    // 3-chip bottom layer must include c; the rest layers above without them.
+    const built = buildPots(
+      mkHand({
+        inHand: ['a', 'b', 'c'],
+        allIn: ['c'],
+        totalCommitted: { a: 9, b: 9, c: 1 },
+      })
+    );
+    expect(built).toEqual({
+      refunds: {},
+      pots: [
+        { amount: 3, eligible: ['a', 'b', 'c'] },
+        { amount: 16, eligible: ['a', 'b'] },
+      ],
     });
   });
 });

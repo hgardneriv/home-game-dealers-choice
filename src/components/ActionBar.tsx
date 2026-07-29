@@ -117,6 +117,18 @@ export function ActionBar({ game }: { game: GameApi }) {
     );
   }
 
+  // Exchange rounds (draw/discard etc.) get their own UI when the first
+  // variant needing one ships; until then show the waiting bar.
+  if (legal.kind !== 'betting') {
+    return (
+      <div className="sticky bottom-0 flex items-center gap-3 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {leave}
+        <span className="flex-1 text-center text-sm text-white/60">…</span>
+        {leave && <span className="w-24" aria-hidden />}
+      </div>
+    );
+  }
+
   const potTotal = hand.potTotal;
   const canOpen = legal.canBet;
   const aggLabel = canOpen ? 'Bet' : 'Raise';

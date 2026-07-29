@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { VariantId } from '@/engine/types';
+import { getVariant, IMPLEMENTED_VARIANTS } from '@/engine/variants/registry';
 
 export function CreateGame() {
   const router = useRouter();
@@ -10,13 +12,23 @@ export function CreateGame() {
   // Numeric fields stay as raw strings while editing (so the field can be
   // emptied on mobile); they're parsed with defaults on submit.
   const [stack, setStack] = useState('20');
-  const [smallBlind, setSmallBlind] = useState('1');
-  const [bigBlind, setBigBlind] = useState('2');
+  const [ante, setAnte] = useState('1');
+  const [minBet, setMinBet] = useState('2');
   const [bots, setBots] = useState('0');
   const [topUps, setTopUps] = useState('2');
   const [topUpDecay, setTopUpDecay] = useState('50');
+  const [enabled, setEnabled] = useState<VariantId[]>([...IMPLEMENTED_VARIANTS]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const toggleVariant = (id: VariantId) =>
+    setEnabled((prev) => {
+      if (prev.includes(id)) {
+        const next = prev.filter((v) => v !== id);
+        return next.length > 0 ? next : prev; // never allow an empty list
+      }
+      return [...prev, id];
+    });
 
   const submit = async () => {
     if (!name.trim()) {
@@ -46,8 +58,9 @@ export function CreateGame() {
                 bots: parse(bots, 0),
                 config: {
                   startingStack: parse(stack, 20),
-                  smallBlind: parse(smallBlind, 1),
-                  bigBlind: parse(bigBlind, 2),
+                  ante: parse(ante, 1),
+                  minBet: parse(minBet, 2),
+                  enabledVariants: enabled,
                   topUps: parse0(topUps, 2),
                   topUpDecayPct: parse0(topUpDecay, 50),
                 },
@@ -98,31 +111,59 @@ export function CreateGame() {
       </div>
 
       {mode === 'friends' && (
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          {(
-            [
-              { label: 'Starting coins', value: stack, set: setStack, placeholder: '20' },
-              { label: 'Computer players', value: bots, set: setBots, placeholder: '0' },
-              { label: 'Small blind', value: smallBlind, set: setSmallBlind, placeholder: '1' },
-              { label: 'Big blind', value: bigBlind, set: setBigBlind, placeholder: '2' },
-              { label: 'Top-ups per player', value: topUps, set: setTopUps, placeholder: '2' },
-              { label: 'Top-up shrink %', value: topUpDecay, set: setTopUpDecay, placeholder: '50' },
-            ] as const
-          ).map((f) => (
-            <label key={f.label} className="flex flex-col gap-1">
-              {f.label}
-              <input
-                className={field}
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder={f.placeholder}
-                value={f.value}
-                onChange={(e) => f.set(e.target.value.replace(/\D/g, '').slice(0, 5))}
-              />
-            </label>
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {(
+              [
+                { label: 'Starting coins', value: stack, set: setStack, placeholder: '20' },
+                { label: 'Computer players', value: bots, set: setBots, placeholder: '0' },
+                { label: 'Ante', value: ante, set: setAnte, placeholder: '1' },
+                { label: 'Minimum bet', value: minBet, set: setMinBet, placeholder: '2' },
+                { label: 'Top-ups per player', value: topUps, set: setTopUps, placeholder: '2' },
+                { label: 'Top-up shrink %', value: topUpDecay, set: setTopUpDecay, placeholder: '50' },
+              ] as const
+            ).map((f) => (
+              <label key={f.label} className="flex flex-col gap-1">
+                {f.label}
+                <input
+                  className={field}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder={f.placeholder}
+                  value={f.value}
+                  onChange={(e) => f.set(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                />
+              </label>
+            ))}
+          </div>
+
+          <fieldset className="flex flex-col gap-2 text-sm">
+            <legend className="mb-1 font-medium">Games the dealer can call</legend>
+            {IMPLEMENTED_VARIANTS.map((id) => {
+              const v = getVariant(id);
+              const checked = enabled.includes(id);
+              return (
+                <label
+                  key={id}
+                  className="flex items-center gap-2 rounded-lg border border-black/15 px-3 py-2 dark:border-white/20"
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-emerald-600"
+                    checked={checked}
+                    onChange={() => toggleVariant(id)}
+                  />
+                  {v.name}
+                </label>
+              );
+            })}
+            <p className="text-xs opacity-60">
+              More games are on the way — each dealer picks from this list when it&apos;s
+              their deal.
+            </p>
+          </fieldset>
+        </>
       )}
 
       {error && <p className="text-sm text-red-500">{error}</p>}

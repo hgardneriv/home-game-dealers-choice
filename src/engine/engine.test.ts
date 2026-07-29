@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Table, expectError, legalFor } from './test-utils';
 
-// Default layout with zeroRand: button seat 0 (p0), SB seat 1 (p1), BB seat 2 (p2).
-// Preflop order (3-handed): p0 (button/UTG), p1 (SB), p2 (BB).
+// Default layout with zeroRand: first-hand button lands on the lowest eligible
+// seat (seat 0 = p0). Hand order is clockwise from the button's left with the
+// button last: 3-handed inHand = [p1, p2, p0]. Everyone antes 1 (default) into
+// the pot at hand start; every street (including preflop) opens check-or-bet
+// with first-to-act = inHand[0] (p1).
 
 describe('game setup and seating flow', () => {
   it('creates a lobby with the host at seat 0 and approves joins', () => {
@@ -27,75 +30,83 @@ describe('game setup and seating flow', () => {
     expect(t.state.players['px']).toBeUndefined();
   });
 
-  it('posts blinds automatically and starts with the button acting first (3-handed)', () => {
+  it('collects antes at hand start and opens with the player left of the button', () => {
     const t = new Table(3);
     t.start();
     expect(t.state.phase).toBe('playing');
+    expect(t.hand.variant).toBe('holdem');
     expect(t.hand.buttonSeat).toBe(0);
-    expect(t.hand.sbSeat).toBe(1);
-    expect(t.hand.bbSeat).toBe(2);
-    expect(t.hand.round.committed['p1']).toBe(1);
-    expect(t.hand.round.committed['p2']).toBe(2);
+    expect(t.hand.inHand).toEqual(['p1', 'p2', 'p0']);
+    // Antes live in totalCommitted only — the betting round opens clean.
+    expect(t.hand.totalCommitted).toEqual({ p0: 1, p1: 1, p2: 1 });
+    expect(t.hand.round.committed).toEqual({});
+    expect(t.hand.round.currentBet).toBe(0);
+    expect(t.stack('p0')).toBe(19);
     expect(t.stack('p1')).toBe(19);
-    expect(t.stack('p2')).toBe(18);
-    expect(t.toAct).toBe('p0');
+    expect(t.stack('p2')).toBe(19);
+    expect(t.toAct).toBe('p1');
   });
 
-  it('deals everyone exactly two distinct cards from one 52-card deck', () => {
+  it('deals everyone exactly two distinct face-down cards from one 52-card deck', () => {
     const t = new Table(6);
     t.start();
-    const all = Object.values(t.hand.holeCards).flat();
+    const entries = Object.values(t.hand.playerCards);
+    expect(entries).toHaveLength(6);
+    for (const pc of entries) expect(pc.faceUp).toEqual([false, false]);
+    const all = entries.flatMap((pc) => pc.cards);
     expect(all).toHaveLength(12);
     expect(new Set(all).size).toBe(12);
   });
 });
 
-describe('heads-up rules', () => {
-  it('button posts the small blind and acts first preflop', () => {
+describe('heads-up order', () => {
+  it('the non-button player acts first preflop; the button acts last', () => {
     const t = new Table(2);
     t.start();
-    expect(t.hand.sbSeat).toBe(t.hand.buttonSeat);
-    const buttonId = t.state.seats[t.hand.buttonSeat]!;
-    expect(t.toAct).toBe(buttonId);
+    expect(t.hand.buttonSeat).toBe(0);
+    expect(t.hand.inHand).toEqual(['p1', 'p0']);
+    expect(t.toAct).toBe('p1');
   });
 
-  it('big blind acts first postflop', () => {
+  it('the non-button player acts first on every later street too', () => {
     const t = new Table(2);
     t.start();
-    const buttonId = t.state.seats[t.hand.buttonSeat]!;
-    const bbId = t.state.seats[t.hand.bbSeat]!;
-    t.act(buttonId, 'call');
-    t.act(bbId, 'check');
+    t.act('p1', 'check');
+    t.act('p0', 'check');
     expect(t.hand.round.street).toBe('flop');
-    expect(t.toAct).toBe(bbId);
+    expect(t.toAct).toBe('p1');
   });
 });
 
-describe('big blind option', () => {
-  it('round does not end until the BB acts on an unraised pot; BB may raise', () => {
+describe('preflop check-or-bet', () => {
+  it('preflop opens with no bet: everyone can check around to the flop', () => {
     const t = new Table(3);
     t.start();
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    // All bets matched, but BB still owes a decision.
-    expect(t.hand.round.street).toBe('preflop');
-    expect(t.toAct).toBe('p2');
-    const legal = legalFor(t.state, 'p2');
+    const legal = legalFor(t.state, 'p1');
     expect(legal.canCheck).toBe(true);
-    expect(legal.canRaise).toBe(true);
-    t.act('p2', 'raise', 6);
-    // Raise reopens action to the limpers.
-    expect(t.toAct).toBe('p0');
-  });
-
-  it('BB check closes the preflop round', () => {
-    const t = new Table(3);
-    t.start();
-    t.act('p0', 'call');
-    t.act('p1', 'call');
+    expect(legal.callAmount).toBe(0);
+    expect(legal.canBet).toBe(true);
+    expect(legal.canRaise).toBe(false);
+    expect(legal.minRaiseTo).toBe(2); // minBet seeds the opening bet
+    t.act('p1', 'check');
     t.act('p2', 'check');
+    t.act('p0', 'check');
     expect(t.hand.round.street).toBe('flop');
     expect(t.hand.board).toHaveLength(3);
+    // Only the antes are in the pot.
+    expect(Object.values(t.hand.totalCommitted).reduce((a, b) => a + b, 0)).toBe(3);
+  });
+
+  it('a preflop bet reopens action to everyone behind', () => {
+    const t = new Table(3);
+    t.start();
+    t.act('p1', 'bet', 2);
+    t.act('p2', 'raise', 6);
+    expect(t.toAct).toBe('p0');
+    t.act('p0', 'fold');
+    // p1 still owes the raise.
+    expect(t.toAct).toBe('p1');
+    expect(legalFor(t.state, 'p1').callAmount).toBe(4);
   });
 });
 
@@ -103,37 +114,40 @@ describe('min-raise rules', () => {
   it('bet 2 -> raise to 6 makes the min re-raise 10', () => {
     const t = new Table(3, { stacks: [100, 100, 100] });
     t.start();
-    t.act('p0', 'raise', 6); // raise size 4 over the BB of 2
-    expectError(t.tryAct('p1', 'raise', 9), 'bad-amount');
-    t.act('p1', 'raise', 10);
+    t.act('p1', 'bet', 2);
+    t.act('p2', 'raise', 6); // raise size 4
+    expectError(t.tryAct('p0', 'raise', 9), 'bad-amount');
+    t.act('p0', 'raise', 10);
     expect(t.hand.round.currentBet).toBe(10);
     expect(t.hand.round.lastFullRaiseSize).toBe(4);
   });
 
-  it('postflop opening bet minimum is the big blind', () => {
+  it('every street opening bet minimum is minBet', () => {
     const t = new Table(3);
     t.start();
-    t.act('p0', 'call');
-    t.act('p1', 'call');
+    expectError(t.tryAct('p1', 'bet', 1), 'bad-amount'); // preflop
+    t.act('p1', 'check');
     t.act('p2', 'check');
-    expectError(t.tryAct('p1', 'bet', 1), 'bad-amount');
+    t.act('p0', 'check');
+    expect(t.hand.round.street).toBe('flop');
+    expectError(t.tryAct('p1', 'bet', 1), 'bad-amount'); // fresh street re-seeds
     t.act('p1', 'bet', 2);
     expect(t.hand.round.currentBet).toBe(2);
   });
 });
 
 describe('short all-in raises', () => {
-  // Flop scenario: p1 bets 4, p2 calls, p0 goes all-in for 6 (short raise of
-  // 2 < 4). Betting must NOT reopen for p1/p2.
+  // Flop scenario: p1 bets 4, p2 calls, p0 goes all-in for 7 (short raise of
+  // 3 < 4). Betting must NOT reopen for p1/p2.
   function shortAllInFlop(): Table {
     const t = new Table(3, { stacks: [8, 50, 50] });
-    t.start();
-    t.act('p0', 'call');
-    t.act('p1', 'call');
+    t.start(); // antes: p0 has 7 left
+    t.act('p1', 'check');
     t.act('p2', 'check');
+    t.act('p0', 'check');
     t.act('p1', 'bet', 4);
     t.act('p2', 'call');
-    t.act('p0', 'raise', 6); // all-in: 8 stack - 2 preflop = 6
+    t.act('p0', 'raise', 7); // all-in: 8 stack - 1 ante = 7
     expect(t.hand.allIn).toContain('p0');
     return t;
   }
@@ -143,7 +157,7 @@ describe('short all-in raises', () => {
     expect(t.toAct).toBe('p1');
     const legal = legalFor(t.state, 'p1');
     expect(legal.canRaise).toBe(false);
-    expect(legal.callAmount).toBe(2);
+    expect(legal.callAmount).toBe(3);
     expectError(t.tryAct('p1', 'raise', 12), 'illegal-move');
     t.act('p1', 'call');
     t.act('p2', 'call');
@@ -152,36 +166,34 @@ describe('short all-in raises', () => {
 
   it('a full all-in raise does reopen betting', () => {
     const t = new Table(3, { stacks: [12, 50, 50] });
-    t.start();
-    t.act('p0', 'call');
-    t.act('p1', 'call');
+    t.start(); // antes: p0 has 11 left
+    t.act('p1', 'check');
     t.act('p2', 'check');
+    t.act('p0', 'check');
     t.act('p1', 'bet', 4);
     t.act('p2', 'call');
-    t.act('p0', 'raise', 10); // all-in, raise size 6 >= 4: full raise
+    t.act('p0', 'raise', 11); // all-in, raise size 7 >= 4: full raise
     const legal = legalFor(t.state, 'p1');
     expect(legal.canRaise).toBe(true);
-    expect(legal.minRaiseTo).toBe(16);
+    expect(legal.minRaiseTo).toBe(18); // 11 + full raise size 7
   });
 
   it('cumulative short all-ins totaling a full raise reopen betting', () => {
-    // p1 bets 4; p0 all-in 6 (short +2); p3 all-in 8 (cumulative +4 over the
-    // last full bet of 4 => reopened for p1).
-    const t = new Table(4, { stacks: [8, 50, 50, 10] });
-    t.start();
-    t.act('p3', 'call');
-    t.act('p0', 'call');
-    t.act('p1', 'call');
+    // Flop: p1 bets 4; p3 all-in 6 (short +2); p0 all-in 8 (cumulative +4 over
+    // the last full bet of 4 => reopened for p1, min-raise basis still 4).
+    const t = new Table(4, { stacks: [9, 50, 50, 7] });
+    t.start(); // antes: p0 has 8, p3 has 6
+    t.act('p1', 'check');
     t.act('p2', 'check');
+    t.act('p3', 'check');
+    t.act('p0', 'check');
     t.act('p1', 'bet', 4);
     t.act('p2', 'call');
-    t.act('p3', 'raise', 8); // all-in: 10 - 2 = 8 => short raise of 4? size 4 >= 4 full!
-    // 8 - 4 = 4 which equals the bet size 4, so this is actually a FULL raise.
-    const legalP0 = legalFor(t.state, 'p0');
-    expect(legalP0.canRaise).toBe(false); // p0 has only 6 left: 6 < min raise; all-in below current bet is a call
-    t.act('p0', 'call'); // all-in call for 6
+    t.act('p3', 'raise', 6); // short all-in (+2 < 4)
+    t.act('p0', 'raise', 8); // short all-in, but cumulatively 8 - 4 >= 4
     const legalP1 = legalFor(t.state, 'p1');
     expect(legalP1.canRaise).toBe(true);
+    expect(legalP1.minRaiseTo).toBe(12); // currentBet 8 + last FULL raise size 4
     t.act('p1', 'call');
     t.act('p2', 'call');
     expect(t.hand.round.street).toBe('turn');
@@ -189,14 +201,36 @@ describe('short all-in raises', () => {
 });
 
 describe('side pots and refunds', () => {
+  it('a one-chip stack antes all-in and only contests the main pot', () => {
+    const t = new Table(3, { stacks: [20, 20, 1] });
+    t.start();
+    expect(t.hand.allIn).toEqual(['p2']);
+    expect(t.stack('p2')).toBe(0);
+    expect(t.toAct).toBe('p1'); // all-in p2 is skipped
+    t.rig(
+      { p0: ['Ks', 'Kh'], p1: ['Qc', 'Qd'], p2: ['As', 'Ah'] },
+      ['2c', '7d', '9h', '3s', '5d']
+    );
+    t.act('p1', 'bet', 4);
+    t.act('p0', 'call');
+    t.checkDown();
+    const result = t.hand.result!;
+    expect(result.pots.map((p) => p.amount)).toEqual([3, 8]);
+    expect(result.pots[0].eligible.sort()).toEqual(['p0', 'p1', 'p2']);
+    expect(result.pots[1].eligible.sort()).toEqual(['p0', 'p1']);
+    expect(t.stack('p2')).toBe(3); // aces take the main pot only
+    expect(t.stack('p0')).toBe(23); // kings take the side pot
+    expect(t.stack('p1')).toBe(15);
+  });
+
   it('three-way all-in with stacks 5/12/20: refund, layered pots, correct awards', () => {
     const t = new Table(3, { stacks: [20, 5, 12] });
-    t.start(); // p1 posts SB 1, p2 posts BB 2
-    t.act('p0', 'raise', 20); // all-in
+    t.start(); // antes: 19 / 4 / 11 behind
+    t.act('p1', 'check');
+    t.act('p2', 'check');
+    t.act('p0', 'bet', 19); // all-in
     t.act('p1', 'call'); // all-in for 5 total
     t.act('p2', 'call'); // all-in for 12 total
-    // Rig before the runout completes? The runout happens synchronously on the
-    // last call, so rig by re-running: instead assert pot structure + payouts.
     expect(t.state.phase).toBe('hand-over');
     const result = t.hand.result!;
     expect(result.refunds['p0']).toBe(8); // 20 - 12 uncalled
@@ -216,7 +250,9 @@ describe('side pots and refunds', () => {
       { p0: ['Qc', 'Qd'], p1: ['As', 'Ah'], p2: ['Ks', 'Kh'] },
       ['2c', '7d', '9h', '3s', '5c']
     );
-    t.act('p0', 'raise', 20);
+    t.act('p1', 'check');
+    t.act('p2', 'check');
+    t.act('p0', 'bet', 19);
     t.act('p1', 'call');
     t.act('p2', 'call');
     expect(t.stack('p1')).toBe(15); // main pot only
@@ -231,49 +267,51 @@ describe('side pots and refunds', () => {
       { p0: ['2c', '7d'], p1: ['As', 'Ah'], p2: ['Ks', 'Kh'] },
       ['2d', '8h', '9h', 'Ts', '5c']
     );
-    t.act('p0', 'raise', 10);
+    t.act('p1', 'check');
+    t.act('p2', 'check');
+    t.act('p0', 'bet', 10);
     t.act('p1', 'call');
     t.act('p2', 'call');
-    // Flop: p1 bets, p2 calls, p0 (initial contributor) folds.
+    // Flop: p1 bets, p2 calls, p0 (a preflop contributor) folds.
     t.act('p1', 'bet', 10);
     t.act('p2', 'call');
     t.act('p0', 'fold');
     t.checkDown();
     const result = t.hand.result!;
-    expect(result.pots[0].amount).toBe(50); // includes p0's 10 preflop
+    expect(result.pots[0].amount).toBe(53); // includes p0's ante + 10 preflop
     expect(result.pots[0].eligible).not.toContain('p0');
     expect(result.pots[0].winners).toEqual(['p1']);
-    expect(t.stack('p1')).toBe(80);
+    expect(t.stack('p1')).toBe(82);
   });
 });
 
 describe('fold-around and uncalled bets', () => {
-  it('everyone folds: last player wins instantly without showing cards', () => {
+  it('everyone folds: last player wins the antes instantly without showing cards', () => {
     const t = new Table(3);
     t.start();
-    t.act('p0', 'fold');
     t.act('p1', 'fold');
+    t.act('p2', 'fold');
     expect(t.state.phase).toBe('hand-over');
     const result = t.hand.result!;
-    expect(result.pots[0].winners).toEqual(['p2']);
+    expect(result.pots[0].winners).toEqual(['p0']);
     expect(Object.keys(result.revealed)).toHaveLength(0);
-    expect(t.stack('p2')).toBe(21); // won the SB
+    expect(t.stack('p0')).toBe(22); // won the 3 antes
     expect(t.stack('p1')).toBe(19);
+    expect(t.stack('p2')).toBe(19);
   });
 
   it('an uncalled river bet is returned to the bettor', () => {
     const t = new Table(2, { stacks: [30, 30] });
-    t.start();
-    const buttonId = t.state.seats[t.hand.buttonSeat]!;
-    const bbId = buttonId === 'p0' ? 'p1' : 'p0';
-    t.act(buttonId, 'call');
-    t.act(bbId, 'check');
+    t.start(); // antes: pot 2, both have 29 behind
+    t.act('p1', 'check');
+    t.act('p0', 'check');
     t.checkDownStreets(2); // flop, turn checked through
-    t.act(bbId, 'bet', 10);
-    t.act(buttonId, 'fold');
-    // BB wins pot of 4 preflop chips; the 10 comes back.
-    expect(t.stack(bbId)).toBe(32);
-    expect(t.stack(buttonId)).toBe(28);
+    expect(t.hand.round.street).toBe('river');
+    t.act('p1', 'bet', 10);
+    t.act('p0', 'fold');
+    // p1 wins the 2 antes; the 10 comes back.
+    expect(t.stack('p1')).toBe(31);
+    expect(t.stack('p0')).toBe(29);
   });
 });
 
@@ -281,10 +319,8 @@ describe('all-in runout', () => {
   it('deals the remaining streets with no further betting and shows down', () => {
     const t = new Table(2, { stacks: [20, 20] });
     t.start();
-    const buttonId = t.state.seats[t.hand.buttonSeat]!;
-    const bbId = buttonId === 'p0' ? 'p1' : 'p0';
-    t.act(buttonId, 'raise', 20);
-    t.act(bbId, 'call');
+    t.act('p1', 'bet', 19); // all-in
+    t.act('p0', 'call');
     expect(t.state.phase).toBe('hand-over');
     expect(t.hand.board).toHaveLength(5);
     expect(t.hand.result).not.toBeNull();
@@ -302,16 +338,16 @@ describe('split pots and odd chips', () => {
       { p0: ['2c', '3d'], p2: ['2h', '3s'], p1: ['9c', '9d'] },
       ['Ah', 'Kd', 'Qs', 'Jc', 'Td']
     );
-    t.act('p0', 'call'); // 2
-    t.act('p1', 'fold'); // SB folds, 1 dead in pot
-    t.act('p2', 'check');
+    t.act('p1', 'fold'); // their ante stays in the pot
+    t.act('p2', 'bet', 2);
+    t.act('p0', 'call');
     t.checkDown();
-    // Pot = 5 (2 + 2 + 1). Split between p0 and p2: p2 is first clockwise
-    // from the button (seat 2 vs seat 0 => order p2 then p0 from seat 1).
+    // Pot = 7 (3 antes + 2 + 2). Split between p0 and p2: p2 is first
+    // clockwise from the button (order p1, p2, p0).
     const result = t.hand.result!;
     expect(result.pots[0].winners.sort()).toEqual(['p0', 'p2']);
-    expect(t.stack('p2')).toBe(21); // 18 + 3 (extra odd chip)
-    expect(t.stack('p0')).toBe(20); // 18 + 2
+    expect(t.stack('p2')).toBe(21); // 17 + 4 (extra odd chip)
+    expect(t.stack('p0')).toBe(20); // 17 + 3
   });
 });
 
@@ -323,9 +359,9 @@ describe('showdown order and auto-muck', () => {
       { p0: ['2c', '7d'], p1: ['Ts', 'Th'], p2: ['As', 'Ad'] },
       ['3d', '8h', '9c', 'Ks', '5c']
     );
-    t.act('p0', 'call');
-    t.act('p1', 'call');
+    t.act('p1', 'check');
     t.act('p2', 'check');
+    t.act('p0', 'check');
     // Flop / turn check through.
     t.checkDownStreets(2);
     // River: p1 (first to act) bets; p2 and p0 call.
@@ -336,7 +372,7 @@ describe('showdown order and auto-muck', () => {
     expect(result.showdownOrder[0]).toBe('p1'); // last aggressor
     expect(result.revealed['p1']).toBeDefined();
     expect(result.revealed['p2']).toBeDefined(); // beats p1's tens
-    expect(result.revealed['p0']).toBeUndefined(); // seven-high mucks
+    expect(result.revealed['p0']).toBeUndefined(); // king-high mucks
     expect(result.descriptions['p2']).toBe('Pair of Aces');
     expect(result.pots[0].winners).toEqual(['p2']);
   });
@@ -348,124 +384,64 @@ describe('showdown order and auto-muck', () => {
       { p0: ['2c', '7d'], p1: ['Ts', 'Th'], p2: ['As', 'Ad'] },
       ['3d', '8h', '9c', 'Ks', '5c']
     );
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.act('p2', 'check');
     t.checkDown(); // everything checks through
     const result = t.hand.result!;
     expect(result.showdownOrder[0]).toBe('p1'); // seat 1, first left of button
   });
 });
 
-describe('dead button rule', () => {
-  it('busted SB leaves a dead button: BB advances, button sits on the empty seat', () => {
+describe('button rotation', () => {
+  /** Hand 1 of a 4-handed game where p1 (stack 3) busts to p0's aces. */
+  function bustP1(): Table {
     const t = new Table(4, { stacks: [50, 3, 50, 50] });
-    t.start();
-    // Hand 1: button 0, SB p1 (posts 1), BB p2 (posts 2), UTG p3.
+    t.start(); // button 0, order p1, p2, p3, p0; antes leave p1 with 2
     t.rig(
       { p0: ['As', 'Ah'], p1: ['2c', '7d'], p2: ['Kc', 'Kd'], p3: ['3c', '8d'] },
       ['4h', '9s', 'Jd', 'Qc', '6h']
     );
+    t.act('p1', 'bet', 2); // all-in
+    t.act('p2', 'fold');
     t.act('p3', 'fold');
-    t.act('p0', 'call');
-    t.act('p1', 'raise', 3); // all-in short
-    t.act('p2', 'call');
-    t.act('p0', 'call');
-    t.checkDown();
+    t.act('p0', 'call'); // runout to showdown
     expect(t.state.players['p1'].status).toBe('busted');
+    return t;
+  }
 
-    // Hand 2: dead button on p1's empty seat, SB due at seat 2 (posted), BB seat 3.
+  it('the button advances one seat and skips the busted seat', () => {
+    const t = bustP1();
     t.nextHand();
-    expect(t.hand.buttonSeat).toBe(1);
-    expect(t.hand.sbSeat).toBe(2);
-    expect(t.hand.deadSb).toBe(false);
-    expect(t.hand.bbSeat).toBe(3);
+    expect(t.hand.buttonSeat).toBe(2); // seat 1 (busted) skipped
+    expect(t.hand.inHand).toEqual(['p3', 'p0', 'p2']);
     expect(t.hand.inHand).not.toContain('p1');
+    expect(t.toAct).toBe('p3'); // left of the button
   });
 
-  it('nobody skips or double-pays the BB across an orbit with a bust', () => {
-    const t = new Table(4, { stacks: [50, 3, 50, 50] });
-    t.start();
-    t.rig(
-      { p0: ['As', 'Ah'], p1: ['2c', '7d'], p2: ['Kc', 'Kd'], p3: ['3c', '8d'] },
-      ['4h', '9s', 'Jd', 'Qc', '6h']
-    );
-    t.act('p3', 'fold');
-    t.act('p0', 'call');
-    t.act('p1', 'raise', 3);
-    t.act('p2', 'call');
-    t.act('p0', 'call');
-    t.checkDown();
-
-    const bbSeats: number[] = [];
+  it('rotation stays one-eligible-seat-per-hand across an orbit with a bust', () => {
+    const t = bustP1();
+    const buttons: number[] = [];
     for (let i = 0; i < 4; i++) {
       t.nextHand();
-      bbSeats.push(t.hand.bbSeat);
+      buttons.push(t.hand.buttonSeat);
       t.foldAround();
     }
-    // BB rotates through the three remaining players, one step at a time.
-    expect(bbSeats).toEqual([3, 0, 2, 3]);
-  });
-
-  it('3 -> 2 transition: previous BB takes the button/SB, never double-BBs', () => {
-    const t = new Table(3, { stacks: [50, 50, 3] });
-    t.start(); // button 0, SB p1, BB p2 (all-in for 2 of 3... stack 3 posts 2)
-    t.rig(
-      { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] },
-      ['4h', '9s', 'Jd', 'Qc', '6h']
-    );
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.act('p2', 'raise', 3); // all-in for the last chip
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.checkDown();
-    expect(t.state.players['p2'].status).toBe('busted');
-
-    t.nextHand();
-    // Heads-up: BB advances from seat 2 to seat 0 (p0); p1 gets button + SB.
-    expect(t.hand.bbSeat).toBe(0);
-    expect(t.hand.buttonSeat).toBe(1);
-    expect(t.hand.sbSeat).toBe(1);
+    expect(buttons).toEqual([2, 3, 0, 2]);
   });
 });
 
-describe('mid-orbit joiner', () => {
-  it('a joiner one seat past the BB simply enters as the next big blind', () => {
+describe('new joiner', () => {
+  it('a player seated mid-hand is dealt into the very next hand (no arc exclusion)', () => {
     const t = new Table(3); // seats 0, 1, 2
-    t.start(); // hand 1: button 0, sb 1, bb 2
+    t.start(); // hand 1: button 0
     t.apply({ type: 'requestSeat', playerId: 'p9', name: 'Late Larry', seat: 3 });
     t.apply({ type: 'approveSeat', byId: 'p0', playerId: 'p9' });
+    expect(t.seatOf('p9')).toBe(3);
+    expect(t.hand.inHand).not.toContain('p9'); // not in the live hand
     t.foldAround();
     t.nextHand();
-    // Fair entry: p9 posts the BB immediately.
-    expect(t.hand.bbSeat).toBe(3);
-    expect(t.hand.inHand).toContain('p9');
-  });
-
-  it('a joiner between the button and the due SB waits out the blind arc', () => {
-    // Players at seats 0, 1, 3 — seat 2 is an empty gap.
-    const t = new Table(3, { seats: [0, 1, 3] });
-    t.start(); // hand 1: button 0, sb 1, bb 3
-    expect(t.hand.bbSeat).toBe(3);
-    // Joiner takes the gap seat 2 mid-hand.
-    t.apply({ type: 'requestSeat', playerId: 'p9', name: 'Late Larry', seat: 2 });
-    t.apply({ type: 'approveSeat', byId: 'p0', playerId: 'p9' });
-    expect(t.seatOf('p9')).toBe(2);
-    t.foldAround();
-
-    // Hand 2: button 1, SB due at 3, BB seat 0. Seat 2 sits in [button, bb):
-    // dealing p9 in would hand them the button before any blind — they wait.
-    t.nextHand();
+    // Hand 2: button seat 1; p9 plays immediately.
     expect(t.hand.buttonSeat).toBe(1);
-    expect(t.hand.sbSeat).toBe(3);
-    expect(t.hand.bbSeat).toBe(0);
-    expect(t.hand.inHand).not.toContain('p9');
-
-    t.foldAround();
-    // Hand 3: button 3, SB due 0, BB 1 — seat 2 is past the arc; p9 plays.
-    t.nextHand();
-    expect(t.hand.inHand).toContain('p9');
+    expect(t.hand.inHand).toEqual(['p2', 'p9', 'p0', 'p1']);
+    expect(t.hand.totalCommitted['p9']).toBe(1); // anted like everyone else
   });
 });
 
@@ -478,29 +454,28 @@ describe('timers, time bank, and away players', () => {
 
     t.now = deadline + 1;
     t.apply({ type: 'timeout' }); // first expiry: time bank kicks in
-    expect(t.toAct).toBe('p0'); // still their turn
-    expect(t.state.players['p0'].timeBankMs).toBe(0);
+    expect(t.toAct).toBe('p1'); // still their turn
+    expect(t.state.players['p1'].timeBankMs).toBe(0);
     expect(t.hand.round.actionDeadline).toBe(deadline + 10_000);
 
     t.now = t.hand.round.actionDeadline! + 1;
-    t.apply({ type: 'timeout' }); // second expiry: auto-fold (facing the BB)
-    expect(t.hand.folded).toContain('p0');
-    expect(t.state.players['p0'].status).toBe('away');
-    expect(t.toAct).toBe('p1');
+    t.apply({ type: 'timeout' }); // second expiry: preflop check is free
+    expect(t.hand.folded).not.toContain('p1');
+    expect(t.state.players['p1'].status).toBe('away');
+    expect(t.toAct).toBe('p2');
   });
 
-  it('auto-checks when checking is free', () => {
+  it('auto-folds when the expiring player faces a bet', () => {
     const t = new Table(3);
     t.start();
-    t.act('p0', 'call');
-    t.act('p1', 'call');
-    t.now = t.hand.round.actionDeadline! + t.state.players['p2'].timeBankMs + 1;
+    t.act('p1', 'bet', 2);
+    t.now = t.hand.round.actionDeadline! + 1;
     t.apply({ type: 'timeout' }); // time bank
     t.now = t.hand.round.actionDeadline! + 1;
-    t.apply({ type: 'timeout' }); // BB can check for free
-    expect(t.hand.folded).not.toContain('p2');
-    expect(t.hand.round.street).toBe('flop');
+    t.apply({ type: 'timeout' }); // facing a bet: auto-fold
+    expect(t.hand.folded).toContain('p2');
     expect(t.state.players['p2'].status).toBe('away');
+    expect(t.toAct).toBe('p0');
   });
 
   it('away players are auto-resolved instantly on their next turns', () => {
@@ -509,25 +484,26 @@ describe('timers, time bank, and away players', () => {
     t.now = t.hand.round.actionDeadline! + 1;
     t.apply({ type: 'timeout' });
     t.now = t.hand.round.actionDeadline! + 1;
-    t.apply({ type: 'timeout' }); // p0 folded + away
-    // Finish the hand.
-    t.foldAround();
-    t.nextHand();
-    // p0 is dealt in (blinds apply) but the clock is already expired.
-    if (t.toAct && t.state.players[t.toAct].status === 'away') {
-      expect(t.hand.round.actionDeadline).toBeLessThanOrEqual(t.now);
-    }
+    t.apply({ type: 'timeout' }); // p1 auto-checked + away
+    t.act('p2', 'fold');
+    t.act('p0', 'fold'); // p1 wins hand 1
+    t.nextHand(); // hand 2: button seat 1, order p2, p0, p1
+    t.act('p2', 'check');
+    t.act('p0', 'check');
+    expect(t.toAct).toBe('p1');
+    expect(t.state.players['p1'].status).toBe('away');
+    expect(t.hand.round.actionDeadline).toBe(t.now); // instantly due
   });
 
-  it('imBack restores an away player and re-stamps their clock on their turn', () => {
+  it('imBack restores an away player', () => {
     const t = new Table(3);
     t.start();
     t.now = t.hand.round.actionDeadline! + 1;
     t.apply({ type: 'timeout' });
     t.now = t.hand.round.actionDeadline! + 1;
-    t.apply({ type: 'timeout' }); // p0 away
-    t.apply({ type: 'imBack', playerId: 'p0' });
-    expect(t.state.players['p0'].status).toBe('seated');
+    t.apply({ type: 'timeout' }); // p1 away
+    t.apply({ type: 'imBack', playerId: 'p1' });
+    expect(t.state.players['p1'].status).toBe('seated');
   });
 });
 
@@ -537,8 +513,8 @@ describe('host controls', () => {
     t.start();
     t.apply({ type: 'pause', byId: 'p0' });
     expect(t.state.phase).toBe('playing'); // still finishing the hand
-    t.act('p0', 'fold');
     t.act('p1', 'fold');
+    t.act('p2', 'fold');
     expect(t.state.phase).toBe('paused');
     t.apply({ type: 'resume', byId: 'p0' });
     expect(t.state.phase).toBe('hand-over');
@@ -546,26 +522,27 @@ describe('host controls', () => {
     expect(t.state.phase).toBe('playing');
   });
 
-  it('kicking the acting player folds them and play continues', () => {
+  it('kicking a player folds them and play continues', () => {
     const t = new Table(3);
     t.start();
+    expect(t.toAct).toBe('p1');
+    expectError(t.tryApply({ type: 'kick', byId: 'p1', playerId: 'p2' }), 'not-host');
+    t.apply({ type: 'kick', byId: 'p0', playerId: 'p2' }); // host kicks a bystander
+    expect(t.state.players['p2'].status).toBe('kicked');
+    expect(t.state.seats[2]).toBeNull();
+    expect(t.hand.folded).toContain('p2');
+    // Hand continues heads-up between p1 and p0.
+    t.act('p1', 'check');
     expect(t.toAct).toBe('p0');
-    expectError(t.tryApply({ type: 'kick', byId: 'p1', playerId: 'p0' }), 'not-host');
-    t.apply({ type: 'kick', byId: 'p0', playerId: 'p1' }); // host kicks SB (not acting)
-    expect(t.state.players['p1'].status).toBe('kicked');
-    expect(t.state.seats[1]).toBeNull();
-    expect(t.hand.folded).toContain('p1');
-    // Hand continues heads-up between p0 and p2.
-    t.act('p0', 'call');
     expect(t.state.phase).toBe('playing');
   });
 });
 
 describe('host ends the game', () => {
-  it('is host-only, refunds mid-hand chips, and marks the reason', () => {
+  it('is host-only, refunds mid-hand chips (antes included), and marks the reason', () => {
     const t = new Table(3);
     t.start();
-    t.act('p0', 'raise', 10); // chips in the pot mid-hand
+    t.act('p1', 'bet', 10); // chips in the pot mid-hand
     expectError(t.tryApply({ type: 'endGame', byId: 'p1' }), 'not-host');
     t.apply({ type: 'endGame', byId: 'p0' });
     expect(t.state.phase).toBe('ended');

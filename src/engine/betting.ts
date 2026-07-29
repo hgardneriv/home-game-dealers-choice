@@ -1,4 +1,11 @@
-import type { GameState, HandState, LegalActions, PlayerMove } from './types';
+import type {
+  BettingLegal,
+  GameState,
+  HandState,
+  LegalActions,
+  PlayerMove,
+} from './types';
+import { getVariant } from './variants/registry';
 
 /**
  * Betting-round mechanics. All functions here mutate the state they are given —
@@ -7,9 +14,13 @@ import type { GameState, HandState, LegalActions, PlayerMove } from './types';
  *
  * Bet/raise amounts are "raise TO" totals: the player's total commitment for
  * the current street after the action.
+ *
+ * Exchange rounds (draw/declare/…) reuse the same turn-walk machinery with the
+ * betting fields idle: currentBet stays 0, so isSettled degenerates to "has
+ * acted", which is exactly the semantics an exchange turn needs.
  */
 
-/** Players still able to act: dealt in, not folded, not all-in. */
+/** Players still able to bet: dealt in, not folded, not all-in. */
 export function actors(hand: HandState): string[] {
   return hand.inHand.filter((id) => !hand.folded.includes(id) && !hand.allIn.includes(id));
 }
@@ -17,6 +28,15 @@ export function actors(hand: HandState): string[] {
 /** Players still contesting the pot (may be all-in). */
 export function active(hand: HandState): string[] {
   return hand.inHand.filter((id) => !hand.folded.includes(id));
+}
+
+/**
+ * Who takes turns this round: betting rounds walk the actors (all-in players
+ * have no bet to make); exchange rounds walk everyone still in the pot —
+ * an all-in player still draws cards.
+ */
+function turnTakers(hand: HandState): string[] {
+  return hand.round.kind === 'exchange' ? active(hand) : actors(hand);
 }
 
 /** True when `id` has no pending decision this round. */
@@ -29,7 +49,7 @@ function isSettled(hand: HandState, id: string): boolean {
 
 /** Next player after `fromId` (cyclic hand order) who still owes a decision, or null. */
 export function nextToAct(hand: HandState, fromId: string | null): string | null {
-  const able = actors(hand);
+  const able = turnTakers(hand);
   if (able.length === 0) return null;
   const order = hand.inHand;
   const start = fromId ? order.indexOf(fromId) : -1;
@@ -40,23 +60,18 @@ export function nextToAct(hand: HandState, fromId: string | null): string | null
   return null;
 }
 
-/** First actor for a fresh street. Preflop starts left of the BB; postflop at inHand[0]. */
-export function firstToAct(state: GameState, hand: HandState): string | null {
-  if (hand.round.street === 'preflop') {
-    const bbId = state.seats[hand.bbSeat];
-    return nextToAct(hand, bbId);
-  }
-  return nextToAct(hand, null);
-}
-
-/** A betting round is complete when nobody owes a decision. */
-export function isRoundComplete(hand: HandState): boolean {
-  return hand.round.toAct === null;
-}
-
+/**
+ * Legal actions for the player currently to act, or null. The single source
+ * shared by the engine, server validation, the bot view, and (via redaction)
+ * the client ActionBar — they can never disagree. Exchange rounds delegate to
+ * the hand's variant module.
+ */
 export function getLegalActions(state: GameState, playerId: string): LegalActions | null {
   const hand = state.hand;
   if (!hand || hand.round.toAct !== playerId) return null;
+  if (hand.round.kind === 'exchange') {
+    return getVariant(hand.variant).exchange!.legal(state, playerId);
+  }
   const r = hand.round;
   const player = state.players[playerId];
   const committed = r.committed[playerId] ?? 0;
@@ -67,10 +82,11 @@ export function getLegalActions(state: GameState, playerId: string): LegalAction
   const canBet = r.currentBet === 0 && player.stack > 0;
   const canRaise = r.currentBet > 0 && reopened && maxTo > r.currentBet;
   const minRaiseTo = canBet
-    ? Math.min(state.config.bigBlind, maxTo)
+    ? Math.min(state.config.minBet, maxTo)
     : Math.min(r.currentBet + r.lastFullRaiseSize, maxTo);
 
   return {
+    kind: 'betting',
     canFold: true,
     canCheck: toCall <= 0,
     callAmount: toCall > 0 ? Math.min(toCall, player.stack) : 0,
@@ -84,9 +100,10 @@ export function getLegalActions(state: GameState, playerId: string): LegalAction
 export type MoveError = { code: 'illegal-move' | 'bad-amount'; message: string };
 
 /**
- * Apply a validated move for the player currently to act. Mutates state.
- * Returns the normalized move actually applied (for events) or an error.
- * Does NOT advance toAct — the engine does that after checking round status.
+ * Apply a validated betting move for the player currently to act. Mutates
+ * state. Returns the normalized move actually applied (for events) or an
+ * error. Does NOT advance toAct — the engine does that after checking round
+ * status.
  */
 export function applyMove(
   state: GameState,
@@ -97,7 +114,10 @@ export function applyMove(
   const hand = state.hand!;
   const r = hand.round;
   const player = state.players[playerId];
-  const legal = getLegalActions(state, playerId)!;
+  const legal = getLegalActions(state, playerId);
+  if (!legal) return { error: { code: 'illegal-move', message: 'Not your turn' } };
+  if (legal.kind !== 'betting')
+    return { error: { code: 'illegal-move', message: 'Not a betting round' } };
   const committed = r.committed[playerId] ?? 0;
 
   const pay = (chips: number) => {
@@ -152,7 +172,7 @@ export function applyMove(
       pay(to - committed);
       const prevBet = r.currentBet;
       const fullRaise = isBet
-        ? to >= state.config.bigBlind
+        ? to >= state.config.minBet
         : to >= prevBet + r.lastFullRaiseSize;
       r.currentBet = to;
       r.lastAggressor = playerId;
@@ -172,3 +192,5 @@ export function applyMove(
     }
   }
 }
+
+export type { BettingLegal };

@@ -1,23 +1,25 @@
 import type { Card, HandResult, HandState } from './types';
-import { describe, evaluate7 } from './evaluator';
 import { buildPots } from './pots';
 import { active } from './betting';
 
 /**
- * Resolve a hand that reached showdown (board complete, >=2 players not
- * folded). Computes pots, winners, reveal order and auto-mucks, and returns
- * both the result and the per-player payouts (refunds + pot shares).
+ * Resolve a hand that reached showdown (>=2 players not folded). Scoring is
+ * the variant's business — the engine passes the variant's score/describe
+ * functions in. Computes pots, winners, reveal order and auto-mucks, and
+ * returns both the result and the per-player payouts (refunds + pot shares).
  * Does not mutate anything — the engine applies the payouts.
  */
 export function resolveShowdown(
-  hand: HandState
+  hand: HandState,
+  score: (hand: HandState, playerId: string) => number,
+  describeScore: (score: number) => string
 ): { result: HandResult; payouts: Record<string, number> } {
   const contesting = active(hand);
   const { refunds, pots } = buildPots(hand);
 
   const scores: Record<string, number> = {};
   for (const id of contesting) {
-    scores[id] = evaluate7([...hand.holeCards[id], ...hand.board]);
+    scores[id] = score(hand, id);
   }
 
   // Clockwise-from-left-of-button ordering — used for odd chips and reveals.
@@ -37,7 +39,7 @@ export function resolveShowdown(
   // Reveal / auto-muck: show a hand only if it beats or ties every hand shown
   // so far for some pot it is eligible in. Winners always end up revealed.
   const bestShown: number[] = pots.map(() => 0);
-  const revealed: Record<string, [Card, Card]> = {};
+  const revealed: Record<string, Card[]> = {};
   for (const id of showdownOrder) {
     let shows = false;
     pots.forEach((pot, i) => {
@@ -45,7 +47,7 @@ export function resolveShowdown(
     });
     if (contesting.length === 1) shows = false; // uncontested — no reveal needed
     if (shows) {
-      revealed[id] = hand.holeCards[id];
+      revealed[id] = [...hand.playerCards[id].cards];
       pots.forEach((pot, i) => {
         if (pot.eligible.includes(id)) bestShown[i] = Math.max(bestShown[i], scores[id]);
       });
@@ -69,7 +71,7 @@ export function resolveShowdown(
   }
 
   const descriptions: Record<string, string> = {};
-  for (const id of Object.keys(revealed)) descriptions[id] = describe(scores[id]);
+  for (const id of Object.keys(revealed)) descriptions[id] = describeScore(scores[id]);
 
   return {
     result: { pots: resultPots, revealed, descriptions, showdownOrder, refunds },

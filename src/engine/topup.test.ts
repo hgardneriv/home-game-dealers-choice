@@ -29,15 +29,15 @@ describe('topUpAmount', () => {
     expect(topUpAmount(c, 1)).toBe(0);
   });
 
-  it('an amount below one big blind is not offered', () => {
-    // Second slot would be round(12·0.1) = 1 < bigBlind 2.
+  it('an amount below the minimum bet is not offered', () => {
+    // Second slot would be round(12·0.1) = 1 < minBet 2.
     const c = cfg({ topUps: 3, topUpDecayPct: 90 });
     expect(topUpAmount(c, 0)).toBe(12);
     expect(topUpAmount(c, 1)).toBe(0);
   });
 
   it('tiny games never offer a useless top-up', () => {
-    // startingStack 2 (the clamp floor): first = round(1.2) = 1 < bigBlind 2.
+    // startingStack 2 (the clamp floor): first = round(1.2) = 1 < minBet 2.
     const c = normalizeConfig({ startingStack: 2 });
     expect(topUpAmount(c, 0)).toBe(0);
   });

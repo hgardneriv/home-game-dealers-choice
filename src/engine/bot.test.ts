@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { botDecide, hasFlushDraw, hasOpenEndedDraw, type BotView } from './bot';
-import type { LegalActions } from './types';
+import type { BettingLegal, ExchangeLegal } from './types';
 
 /** Neutral rng: zero noise on the 21-roll, max on percentage rolls (no random bluffs/calls). */
 const neutralRng = (n: number) => (n === 21 ? 10 : n - 1);
 
-const legal = (over: Partial<LegalActions> = {}): LegalActions => ({
+const legal = (over: Partial<BettingLegal> = {}): BettingLegal => ({
+  kind: 'betting',
   canFold: true,
   canCheck: false,
   callAmount: 10,
@@ -19,13 +20,14 @@ const legal = (over: Partial<LegalActions> = {}): LegalActions => ({
 const view = (over: Partial<BotView>): BotView => ({
   hole: ['2c', '7d'],
   board: [],
+  publicCards: {},
   potTotal: 10,
   stack: 50,
   committed: 0,
   legal: legal(),
   activeCount: 2,
   personality: { tightness: 0.5, aggression: 0.5, bluffFreq: 0.1 },
-  bigBlind: 2,
+  minBet: 2,
   ...over,
 });
 
@@ -88,6 +90,35 @@ describe('bot defense (no more survival mode)', () => {
       catchRng
     );
     expect(decision.move).toBe('call');
+  });
+
+  it('never folds a cheap call (at or below the min bet) with a live hand', () => {
+    // Middle pair facing a min bet into a tiny pot: pot odds are bad enough
+    // that the strength threshold alone would fold, but the cheap-call floor
+    // (callAmount <= minBet with decent equity) keeps the bot in.
+    const decision = botDecide(
+      view({
+        hole: ['9h', '8c'],
+        board: ['9d', 'Kh', '2s'],
+        potTotal: 2,
+        legal: legal({ callAmount: 2 }),
+        minBet: 2,
+      }),
+      neutralRng
+    );
+    expect(decision.move).toBe('call');
+  });
+});
+
+describe('non-betting rounds', () => {
+  it('checks (defers) when handed an exchange-round legal object', () => {
+    const exchange: ExchangeLegal = {
+      kind: 'exchange',
+      moves: [{ kind: 'discard', min: 0, max: 3 }],
+      autoMove: { kind: 'discard', cardIndexes: [] },
+    };
+    const decision = botDecide(view({ legal: exchange }), neutralRng);
+    expect(decision).toEqual({ move: 'check' });
   });
 });
 

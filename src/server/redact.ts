@@ -5,17 +5,18 @@ import type {
   HandResult,
   LegalActions,
   Player,
+  RoundKind,
   SeatRequest,
-  Street,
   TableConfig,
+  VariantId,
 } from '@/engine/types';
 import type { GameState } from '@/engine/types';
 import { getLegalActions } from '@/engine/betting';
 
 /**
  * The client-facing view of a game. A DISTINCT type from GameState so the
- * compiler stops us from ever serializing the raw state (deck + everyone's
- * hole cards) to a response.
+ * compiler stops us from ever serializing the raw state (deck, discards, and
+ * everyone's face-down cards) to a response.
  */
 export interface ClientGameState {
   id: string;
@@ -28,6 +29,8 @@ export interface ClientGameState {
   seats: (string | null)[];
   seatRequests: SeatRequest[];
   hand: ClientHand | null;
+  /** Set while the dealer is picking the next game (M2+). */
+  choosing: { buttonSeat: number; dealerId: string; deadline: number } | null;
   nextHandAt: number | null;
   pauseAfterHand: boolean;
   endedReason: 'host' | 'lastPlayer' | null;
@@ -51,10 +54,8 @@ export interface ClientPlayer {
 
 export interface ClientHand {
   handNo: number;
+  variant: VariantId;
   buttonSeat: number;
-  sbSeat: number;
-  deadSb: boolean;
-  bbSeat: number;
   board: Card[];
   inHand: string[];
   folded: string[];
@@ -62,12 +63,17 @@ export interface ClientHand {
   committed: Record<string, number>;
   totalCommitted: Record<string, number>;
   potTotal: number;
-  street: Street;
+  street: string;
+  roundKind: RoundKind;
   currentBet: number;
   toAct: string | null;
   actionDeadline: number | null;
-  /** Your hole cards only. */
-  myCards: [Card, Card] | null;
+  /** Your own cards, in dealt order. */
+  myCards: Card[] | null;
+  /** Everyone's face-up cards (stud up-cards, no-peek flips). Empty arrays omitted. */
+  publicCards: Record<string, Card[]>;
+  /** How many cards each dealt-in player holds — for rendering card backs. */
+  cardCounts: Record<string, number>;
   /** Your legal actions when it is your turn, else null. */
   legalActions: LegalActions | null;
   result: HandResult | null;
@@ -85,7 +91,6 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
       timeBankMs: p.timeBankMs,
       isHost: p.isHost,
       isBot: p.isBot,
-      // Nullish defaults keep games persisted before the top-up feature valid.
       totalBuyIn: p.totalBuyIn ?? state.config.startingStack,
       topUpsUsed: p.topUpsUsed ?? 0,
     };
@@ -94,12 +99,17 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
   let hand: ClientHand | null = null;
   if (state.hand) {
     const h = state.hand;
+    const publicCards: Record<string, Card[]> = {};
+    const cardCounts: Record<string, number> = {};
+    for (const [id, pc] of Object.entries(h.playerCards)) {
+      cardCounts[id] = pc.cards.length;
+      const up = pc.cards.filter((_, i) => pc.faceUp[i]);
+      if (up.length > 0) publicCards[id] = up;
+    }
     hand = {
       handNo: h.handNo,
+      variant: h.variant,
       buttonSeat: h.buttonSeat,
-      sbSeat: h.sbSeat,
-      deadSb: h.deadSb,
-      bbSeat: h.bbSeat,
       board: [...h.board],
       inHand: [...h.inHand],
       folded: [...h.folded],
@@ -108,10 +118,13 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
       totalCommitted: { ...h.totalCommitted },
       potTotal: Object.values(h.totalCommitted).reduce((a, b) => a + b, 0),
       street: h.round.street,
+      roundKind: h.round.kind,
       currentBet: h.round.currentBet,
       toAct: h.round.toAct,
       actionDeadline: h.round.actionDeadline,
-      myCards: playerId && h.holeCards[playerId] ? [...h.holeCards[playerId]] : null,
+      myCards: playerId && h.playerCards[playerId] ? [...h.playerCards[playerId].cards] : null,
+      publicCards,
+      cardCounts,
       legalActions:
         playerId && h.round.toAct === playerId ? getLegalActions(state, playerId) : null,
       result: h.result, // public at hand end (revealed cards only)
@@ -129,6 +142,13 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
     seats: [...state.seats],
     seatRequests: [...state.seatRequests],
     hand,
+    choosing: state.choosing
+      ? {
+          buttonSeat: state.choosing.buttonSeat,
+          dealerId: state.choosing.dealerId,
+          deadline: state.choosing.deadline,
+        }
+      : null,
     nextHandAt: state.nextHandAt,
     pauseAfterHand: state.pauseAfterHand,
     endedReason: state.endedReason,

@@ -2,6 +2,7 @@ import { createNewGame } from '@/server/store';
 import { buildSetCookie } from '@/server/identity';
 import { json, readJson } from '@/server/api';
 import type { TableConfig } from '@/engine/types';
+import { IMPLEMENTED_VARIANTS } from '@/engine/variants/registry';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,11 @@ export async function POST(req: Request): Promise<Response> {
   // Top-ups are a hosted-game feature: quick play stays a fast disposable
   // session where busting out ends it. Hosted tables use the form config
   // (and its default of 2), applying to bots and humans alike.
-  if (quickPlay) config.topUps = 0;
+  // Quick play also enables every implemented game — the bots don't mind.
+  if (quickPlay) {
+    config.topUps = 0;
+    config.enabledVariants = [...IMPLEMENTED_VARIANTS];
+  }
 
   const { gameId, hostId } = await createNewGame({
     hostName: name,

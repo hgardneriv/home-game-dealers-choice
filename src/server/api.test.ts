@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createGame } from '@/engine/engine';
+import { Table } from '@/engine/test-utils';
 import type { StoreResult } from './store';
 import { json, readJson, storeResponse } from './api';
 
@@ -71,12 +72,26 @@ describe('storeResponse()', () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).not.toContain('"deck"');
-    expect(text).not.toContain('"holeCards"');
+    expect(text).not.toContain('"playerCards"');
+    expect(text).not.toContain('"discards"');
     const body = JSON.parse(text);
     expect(body.state.id).toBe('gapi');
     expect(body.state.yourId).toBe('h1');
     expect(body.state.players.h1.name).toBe('Host');
     expect(body.error).toBeUndefined();
+  });
+
+  it('never leaks hand secrets from a live hand', async () => {
+    const t = new Table(2);
+    t.start();
+    expect(t.state.hand).not.toBeNull();
+    t.state.version = 1;
+    const res = storeResponse({ ok: true, state: t.state, version: 1 }, 'p0');
+    const text = await res.text();
+    expect(text).not.toContain('"deck"');
+    expect(text).not.toContain('"playerCards"');
+    expect(text).not.toContain('"discards"');
+    expect(text).not.toContain('"vstate"');
   });
 
   it('supports anonymous viewers', async () => {

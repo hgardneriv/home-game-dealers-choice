@@ -7,19 +7,15 @@ import type {
   HandState,
   Player,
   TableConfig,
+  VariantId,
 } from './types';
 import { newDeck, shuffle } from './deck';
-import { computePositions, eligiblePlayers, isEligible } from './seating';
-import {
-  actors,
-  active,
-  applyMove,
-  firstToAct,
-  getLegalActions,
-  nextToAct,
-} from './betting';
+import { computeButton, eligiblePlayers, isEligible } from './seating';
+import { actors, active, applyMove, getLegalActions, nextToAct } from './betting';
 import { resolveFoldWin, resolveShowdown } from './showdown';
 import { topUpAmount } from './topup';
+import { getVariant, isImplemented } from './variants/registry';
+import type { GameVariant, PhasePlan, VariantCtx } from './variants/types';
 
 export { getLegalActions };
 
@@ -34,8 +30,9 @@ const BOT_DELAY_JITTER_MS = 1400;
 
 export const DEFAULT_CONFIG: TableConfig = {
   startingStack: 20,
-  smallBlind: 1,
-  bigBlind: 2,
+  ante: 1,
+  minBet: 2,
+  enabledVariants: ['holdem'],
   actionTimeMs: 20_000,
   timeBankMs: 10_000,
   maxSeats: 6,
@@ -46,12 +43,18 @@ export const DEFAULT_CONFIG: TableConfig = {
 export function normalizeConfig(partial: Partial<TableConfig>): TableConfig {
   const cfg = { ...DEFAULT_CONFIG, ...partial, maxSeats: 6 };
   cfg.startingStack = clampInt(cfg.startingStack, 2, 10_000, DEFAULT_CONFIG.startingStack);
-  cfg.smallBlind = clampInt(cfg.smallBlind, 1, cfg.startingStack, 1);
-  cfg.bigBlind = clampInt(cfg.bigBlind, cfg.smallBlind, cfg.startingStack, 2);
+  cfg.ante = clampInt(cfg.ante, 1, cfg.startingStack, 1);
+  // Min bet defaults to 2× ante and can never sit below the ante.
+  cfg.minBet = clampInt(partial.minBet ?? cfg.ante * 2, cfg.ante, cfg.startingStack, cfg.ante * 2);
   cfg.actionTimeMs = clampInt(cfg.actionTimeMs, 5_000, 120_000, DEFAULT_CONFIG.actionTimeMs);
   cfg.timeBankMs = clampInt(cfg.timeBankMs, 0, 60_000, DEFAULT_CONFIG.timeBankMs);
   cfg.topUps = clampInt(cfg.topUps, 0, 20, DEFAULT_CONFIG.topUps);
   cfg.topUpDecayPct = clampInt(cfg.topUpDecayPct, 0, 100, DEFAULT_CONFIG.topUpDecayPct);
+  // Only implemented variants may be enabled; never allow an empty list.
+  const enabled = Array.isArray(cfg.enabledVariants)
+    ? [...new Set(cfg.enabledVariants.filter((v) => typeof v === 'string' && isImplemented(v)))]
+    : [];
+  cfg.enabledVariants = enabled.length > 0 ? enabled : ['holdem'];
   return cfg;
 }
 
@@ -77,7 +80,6 @@ export function createGame(opts: {
     timeBankMs: config.timeBankMs,
     isHost: true,
     isBot: false,
-    hasPlayed: false,
     lastSeenAt: opts.now,
     totalBuyIn: config.startingStack,
     topUpsUsed: 0,
@@ -93,7 +95,7 @@ export function createGame(opts: {
     seats: [opts.hostId, null, null, null, null, null],
     seatRequests: [],
     hand: null,
-    prevBbSeat: null,
+    choosing: null,
     nextHandAt: null,
     pauseAfterHand: false,
     endedReason: null,
@@ -115,6 +117,20 @@ function emit(m: Mutable, type: string, data: unknown = {}): void {
   m.state.events.push(event);
   if (m.state.events.length > EVENT_CAP) m.state.events.splice(0, m.state.events.length - EVENT_CAP);
   m.events.push(event);
+}
+
+/** The mutation surface handed to variant modules. */
+function vctx(m: Mutable): VariantCtx {
+  const state = m.state;
+  const hand = state.hand!;
+  return {
+    state,
+    hand,
+    config: state.config,
+    randInt: m.ctx.randInt,
+    draw: () => hand.deck[hand.deckPos++],
+    emit: (type, data = {}) => emit(m, type, data),
+  };
 }
 
 /** Entry point: apply one action to an immutable state, returning the new state. */
@@ -149,7 +165,6 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
         timeBankMs: state.config.timeBankMs,
         isHost: false,
         isBot: false,
-        hasPlayed: false,
         lastSeenAt: ctx.now,
         totalBuyIn: state.config.startingStack,
         topUpsUsed: 0,
@@ -205,7 +220,7 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       if (state.phase !== 'lobby') return fail('bad-phase', 'Game already started');
       if (eligiblePlayers(state).length < 2)
         return fail('bad-phase', 'Need at least 2 players');
-      startHand(m);
+      startHand(m, defaultVariant(state));
       return done();
     }
 
@@ -237,6 +252,46 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       return done();
     }
 
+    case 'variantMove': {
+      if (state.phase !== 'playing' || !state.hand)
+        return fail('bad-phase', 'No hand in progress');
+      const hand = state.hand;
+      if (hand.round.toAct !== action.playerId)
+        return fail('not-your-turn', 'Not your turn');
+      if (hand.round.kind !== 'exchange')
+        return fail('illegal-move', 'Not an exchange round');
+      const player = state.players[action.playerId];
+      if (player.status === 'away') {
+        player.status = 'seated';
+        emit(m, 'player-back', { playerId: player.id });
+      }
+      player.lastSeenAt = ctx.now;
+      const variant = getVariant(hand.variant);
+      const res = variant.exchange!.apply(vctx(m), action.playerId, action.move);
+      if ('error' in res) return fail(res.error.code, res.error.message);
+      if (!hand.round.actedSinceFullRaise.includes(action.playerId))
+        hand.round.actedSinceFullRaise.push(action.playerId);
+      emit(m, 'action', {
+        playerId: action.playerId,
+        move: res.applied.move,
+        detail: res.applied.detail,
+        street: hand.round.street,
+        auto: false,
+      });
+      hand.round.toAct = nextToAct(hand, action.playerId);
+      hand.round.actionDeadline = null;
+      hand.round.botActAt = null;
+      advance(m);
+      return done();
+    }
+
+    case 'chooseGame':
+    case 'chooseTimeout': {
+      // Dealer's-choice picking phase ships in M2; until then hands start
+      // directly with the session's default variant.
+      return fail('bad-phase', 'No game selection pending');
+    }
+
     case 'timeout': {
       if (state.phase !== 'playing' || !state.hand) return fail('bad-phase', 'No hand');
       const hand = state.hand;
@@ -256,15 +311,32 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       }
 
       const legal = getLegalActions(state, acting)!;
-      const move = legal.canCheck ? 'check' : 'fold';
-      applyMove(state, acting, move, undefined);
-      emit(m, 'action', {
-        playerId: acting,
-        move,
-        amount: 0,
-        street: hand.round.street,
-        auto: true,
-      });
+      if (legal.kind === 'exchange') {
+        // Auto-play the variant's safe default (e.g. stand pat).
+        const variant = getVariant(hand.variant);
+        const res = variant.exchange!.apply(vctx(m), acting, legal.autoMove);
+        if (!('error' in res)) {
+          emit(m, 'action', {
+            playerId: acting,
+            move: res.applied.move,
+            detail: res.applied.detail,
+            street: hand.round.street,
+            auto: true,
+          });
+        }
+        if (!hand.round.actedSinceFullRaise.includes(acting))
+          hand.round.actedSinceFullRaise.push(acting);
+      } else {
+        const move = legal.canCheck ? 'check' : 'fold';
+        applyMove(state, acting, move, undefined);
+        emit(m, 'action', {
+          playerId: acting,
+          move,
+          amount: 0,
+          street: hand.round.street,
+          auto: true,
+        });
+      }
       if (!player.isBot && player.status === 'seated') {
         player.status = 'away';
         emit(m, 'player-away', { playerId: acting });
@@ -280,7 +352,7 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       if (state.phase !== 'hand-over') return fail('bad-phase', 'No hand pending');
       if (state.nextHandAt === null || ctx.now < state.nextHandAt)
         return fail('not-expired', 'Next hand not due yet');
-      startHand(m);
+      startHand(m, defaultVariant(state));
       return done();
     }
 
@@ -365,7 +437,6 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
           aggression: 0.3 + ctx.randInt(50) / 100,
           bluffFreq: 0.05 + ctx.randInt(20) / 100,
         },
-        hasPlayed: false,
         lastSeenAt: ctx.now,
         totalBuyIn: state.config.startingStack,
         topUpsUsed: 0,
@@ -444,11 +515,20 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
 // Hand lifecycle
 // ---------------------------------------------------------------------------
 
-function startHand(m: Mutable): void {
+/**
+ * The variant a hand starts with when nobody is choosing: repeat the previous
+ * hand's game while it stays enabled, else the first enabled variant. Also the
+ * auto-pick an absent dealer gets once the choosing phase ships (M2).
+ */
+export function defaultVariant(state: GameState): VariantId {
+  const prev = state.hand?.variant;
+  if (prev && state.config.enabledVariants.includes(prev)) return prev;
+  return state.config.enabledVariants[0];
+}
+
+function startHand(m: Mutable, variantId: VariantId): void {
   const { state, ctx } = m;
-  const prev = state.hand
-    ? { buttonSeat: state.hand.buttonSeat, sbSeat: state.hand.sbSeat, bbSeat: state.hand.bbSeat }
-    : null;
+  const prevButton = state.hand?.buttonSeat ?? null;
 
   const chipped = Object.values(state.players).filter((p) => isEligible(p));
   if (chipped.length < 2) {
@@ -456,81 +536,104 @@ function startHand(m: Mutable): void {
     return;
   }
 
-  const positions = computePositions(state, prev, ctx.randInt);
-  if (!positions) {
+  const seating = computeButton(state, prevButton, ctx.randInt);
+  if (!seating) {
     endGame(m, null);
     return;
   }
 
+  const variant = getVariant(variantId);
   const deck = shuffle(newDeck(), ctx.randInt);
   const hand: HandState = {
     handNo: (state.hand?.handNo ?? 0) + 1,
+    variant: variantId,
     deck,
     deckPos: 0,
-    buttonSeat: positions.buttonSeat,
-    sbSeat: positions.sbSeat,
-    deadSb: positions.deadSb,
-    bbSeat: positions.bbSeat,
-    holeCards: {},
+    buttonSeat: seating.buttonSeat,
+    playerCards: {},
     board: [],
-    inHand: positions.inHand,
+    discards: [],
+    inHand: seating.inHand,
     folded: [],
     allIn: [],
     totalCommitted: {},
-    round: {
-      street: 'preflop',
-      currentBet: state.config.bigBlind,
-      lastFullRaiseSize: state.config.bigBlind,
-      lastFullRaiseTo: state.config.bigBlind,
-      committed: {},
-      actedSinceFullRaise: [],
-      lastAggressor: null,
-      toAct: null,
-      actionDeadline: null,
-      timeBankArmed: false,
-      botActAt: null,
-    },
+    round: freshRound(state.config, 'betting', 'ante'),
+    vstate: {},
     result: null,
   };
-
-  for (const id of positions.inHand) {
-    hand.holeCards[id] = [hand.deck[hand.deckPos++], hand.deck[hand.deckPos++]];
-    state.players[id].hasPlayed = true;
-  }
 
   state.hand = hand;
   state.phase = 'playing';
   state.nextHandAt = null;
-  state.prevBbSeat = positions.bbSeat;
+  state.choosing = null;
 
   emit(m, 'hand-started', {
     handNo: hand.handNo,
+    variant: variantId,
+    variantName: variant.name,
     buttonSeat: hand.buttonSeat,
-    sbSeat: hand.deadSb ? null : hand.sbSeat,
-    bbSeat: hand.bbSeat,
     inHand: hand.inHand,
   });
 
-  const post = (id: string, amount: number, kind: 'small' | 'big') => {
+  // Everyone dealt in antes (short stacks ante all-in — side pots handle it).
+  for (const id of hand.inHand) {
     const player = state.players[id];
-    const chips = Math.min(amount, player.stack);
+    const chips = Math.min(state.config.ante, player.stack);
     player.stack -= chips;
-    hand.round.committed[id] = chips;
     hand.totalCommitted[id] = chips;
     if (player.stack === 0) hand.allIn.push(id);
-    emit(m, 'blind-posted', { playerId: id, amount: chips, kind });
-  };
-  if (!hand.deadSb) post(state.seats[hand.sbSeat]!, state.config.smallBlind, 'small');
-  post(state.seats[hand.bbSeat]!, state.config.bigBlind, 'big');
+  }
+  emit(m, 'antes-posted', {
+    amount: state.config.ante,
+    playerIds: [...hand.inHand],
+    potTotal: Object.values(hand.totalCommitted).reduce((a, b) => a + b, 0),
+  });
 
-  hand.round.toAct = firstToAct(state, hand);
+  const plan = variant.deal(vctx(m));
+  if (plan.kind === 'showdown') {
+    // Degenerate variant contract — settle immediately rather than wedge.
+    finishHand(m, resolveShowdown(hand, variant.score, variant.describeScore), 'showdown');
+    return;
+  }
+  openRound(m, plan);
   advance(m);
 }
 
+/** Fresh turn-taking round of the given kind. */
+function freshRound(
+  config: TableConfig,
+  kind: 'betting' | 'exchange',
+  street: string
+): HandState['round'] {
+  return {
+    street,
+    kind,
+    currentBet: 0,
+    lastFullRaiseSize: config.minBet,
+    lastFullRaiseTo: 0,
+    committed: {},
+    actedSinceFullRaise: [],
+    // Reset per street: a street checked around => first-left-of-button shows
+    // first at showdown. (All-in runouts skip openRound, so the last betting
+    // street's aggressor correctly drives showdown order in that case.)
+    lastAggressor: null,
+    toAct: null,
+    actionDeadline: null,
+    timeBankArmed: false,
+    botActAt: null,
+  };
+}
+
+function openRound(m: Mutable, plan: { kind: 'betting' | 'exchange'; street: string }): void {
+  const hand = m.state.hand!;
+  hand.round = freshRound(m.state.config, plan.kind, plan.street);
+  hand.round.toAct = nextToAct(hand, null);
+}
+
 /**
- * Drive the hand forward after any mutation: stamp the next turn, advance
- * streets when the round closes, run out the board when betting is over,
- * and resolve fold-wins/showdowns.
+ * Drive the hand forward after any mutation: stamp the next turn, ask the
+ * variant for the next phase when a round closes, skip betting phases nobody
+ * can bet in (the all-in runout), and resolve fold-wins/showdowns.
  */
 function advance(m: Mutable): void {
   const { state } = m;
@@ -551,50 +654,26 @@ function advance(m: Mutable): void {
     return;
   }
 
-  // Round complete. Betting over entirely (<=1 player can still act)?
-  if (actors(hand).length <= 1 && hand.board.length < 5) {
-    // Run out the remaining streets with no betting.
-    while (hand.board.length < 5) {
-      dealStreet(m);
+  // Round complete: let the variant deal and name phases until one needs turns.
+  const variant = getVariant(hand.variant);
+  for (;;) {
+    const plan: PhasePlan = variant.nextPhase(vctx(m));
+    if (plan.kind === 'showdown') {
+      finishHand(m, resolveShowdown(hand, variant.score, variant.describeScore), 'showdown');
+      return;
     }
-    finishHand(m, resolveShowdown(hand), 'showdown');
+    openRound(m, plan);
+    // All-in runout: a betting phase with <=1 player able to bet has no
+    // decisions — deal straight through. (Exchange phases still run: an
+    // all-in player draws cards like anyone else.)
+    if (plan.kind === 'betting' && actors(hand).length <= 1) {
+      hand.round.toAct = null;
+      continue;
+    }
+    if (hand.round.toAct === null) continue;
+    stampTurn(m);
     return;
   }
-
-  if (hand.round.street === 'river') {
-    finishHand(m, resolveShowdown(hand), 'showdown');
-    return;
-  }
-
-  dealStreet(m);
-  hand.round = {
-    street: hand.board.length === 3 ? 'flop' : hand.board.length === 4 ? 'turn' : 'river',
-    currentBet: 0,
-    lastFullRaiseSize: state.config.bigBlind,
-    lastFullRaiseTo: 0,
-    committed: {},
-    actedSinceFullRaise: [],
-    // Reset per street: river checked around => first-left-of-button shows first.
-    // (All-in runouts never reach here, so the last betting street's aggressor
-    // correctly drives showdown order in that case.)
-    lastAggressor: null,
-    toAct: null,
-    actionDeadline: null,
-    timeBankArmed: false,
-    botActAt: null,
-  };
-  hand.round.toAct = firstToAct(state, hand);
-  advance(m); // recurse: stamps turn, or advances again if nobody can act
-}
-
-function dealStreet(m: Mutable): void {
-  const hand = m.state.hand!;
-  const count = hand.board.length === 0 ? 3 : 1;
-  const cards = hand.deck.slice(hand.deckPos, hand.deckPos + count);
-  hand.deckPos += count;
-  hand.board.push(...cards);
-  const street = hand.board.length === 3 ? 'flop' : hand.board.length === 4 ? 'turn' : 'river';
-  emit(m, 'street-dealt', { street, cards, board: [...hand.board] });
 }
 
 function stampTurn(m: Mutable): void {
@@ -638,6 +717,7 @@ function finishHand(
   }
   emit(m, 'hand-result', {
     handNo: hand.handNo,
+    variant: hand.variant,
     kind,
     pots: resolution.result.pots,
     revealed: resolution.result.revealed,
@@ -723,6 +803,7 @@ function endGame(
 ): void {
   m.state.phase = 'ended';
   m.state.nextHandAt = null;
+  m.state.choosing = null;
   m.state.endedReason = reason;
   emit(m, 'game-ended', { winnerId, reason });
 }
@@ -772,3 +853,5 @@ function removePlayer(m: Mutable, playerId: string, status: 'kicked' | 'left'): 
     settleOrHold(m);
   }
 }
+
+export type { GameVariant };

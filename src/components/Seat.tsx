@@ -7,11 +7,9 @@ import { PlayingCard } from './PlayingCard';
 
 export function Seat({
   game,
-  seatIndex,
   playerId,
 }: {
   game: GameApi;
-  seatIndex: number;
   playerId: string | null;
 }) {
   const state = game.state!;
@@ -54,12 +52,10 @@ export function Seat({
     return Math.max(0, Math.min(1, left / total));
   })();
 
-  const badge =
-    hand && !hand.deadSb && hand.sbSeat === seatIndex
-      ? 'SB'
-      : hand && hand.bbSeat === seatIndex
-        ? 'BB'
-        : null;
+  // Hidden hands: face-up cards (stud up-cards etc.) plus backs for the rest.
+  const cardCount = hand?.cardCounts[player.id] ?? 0;
+  const publicCards = hand?.publicCards[player.id] ?? [];
+  const hiddenCount = Math.max(0, cardCount - publicCards.length);
 
   return (
     <motion.div
@@ -83,16 +79,18 @@ export function Seat({
       >
         {inHand && !folded && !showCards && (
           <>
-            <PlayingCard size="sm" />
-            <PlayingCard size="sm" />
+            {publicCards.map((card) => (
+              <PlayingCard key={card} card={card} size="sm" dealt />
+            ))}
+            {Array.from({ length: hiddenCount }).map((_, i) => (
+              <PlayingCard key={`back-${i}`} size="sm" />
+            ))}
           </>
         )}
-        {inHand && showCards && (!folded || isYou) && (
-          <>
-            <PlayingCard card={showCards[0]} size={isYou ? 'md' : 'sm'} dealt />
-            <PlayingCard card={showCards[1]} size={isYou ? 'md' : 'sm'} dealt />
-          </>
-        )}
+        {inHand && showCards && (!folded || isYou) &&
+          showCards.map((card) => (
+            <PlayingCard key={card} card={card} size={isYou ? 'md' : 'sm'} dealt />
+          ))}
       </div>
 
       {/* Plate */}
@@ -121,7 +119,6 @@ export function Seat({
           ) : (
             <>${player.stack}</>
           )}
-          {badge && <span className="ml-1 font-medium text-white/50">{badge}</span>}
           {player.status === 'away' && <span className="ml-1">💤</span>}
         </div>
 
