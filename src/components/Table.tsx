@@ -177,7 +177,7 @@ export function Table({ game }: { game: GameApi }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0 }}
             transition={{ delay: 0.35 }}
-            className="absolute left-1/2 z-30 w-max max-w-[86%] -translate-x-1/2 rounded-xl border border-amber-400/40 bg-black/70 px-4 py-2 text-center shadow-xl backdrop-blur-sm"
+            className="absolute left-1/2 z-30 w-max max-w-[86%] -translate-x-1/2 rounded-xl border border-amber-400/40 bg-black/80 px-4 py-2 text-center shadow-xl"
             style={{ top: `${CENTER.y + 15}%` }}
           >
             <span className="text-sm font-semibold text-amber-300">🏆 {winnersLine}</span>

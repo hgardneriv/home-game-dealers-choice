@@ -42,13 +42,34 @@ function EventNotices({ game }: { game: GameApi }) {
   return null;
 }
 
+/** One shared AudioContext for the whole session. iOS starts contexts
+ *  suspended outside a user gesture (so a per-ping context never plays and
+ *  never fires onended → it leaks, and iOS caps live contexts). Instead we
+ *  create/resume a single context on the first touch and reuse it forever. */
+let sharedAudio: AudioContext | null = null;
+
+function unlockAudio() {
+  try {
+    sharedAudio ??= new AudioContext();
+    if (sharedAudio.state === 'suspended') void sharedAudio.resume();
+  } catch {
+    // no audio available — fine
+  }
+}
+
 /** Soft ping when action reaches you (PokerNow convention). */
 function useTurnPing(isMyTurn: boolean) {
   const wasMyTurn = useRef(false);
+
   useEffect(() => {
-    if (isMyTurn && !wasMyTurn.current) {
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    return () => window.removeEventListener('pointerdown', unlockAudio);
+  }, []);
+
+  useEffect(() => {
+    const audio = sharedAudio;
+    if (isMyTurn && !wasMyTurn.current && audio && audio.state === 'running') {
       try {
-        const audio = new AudioContext();
         const osc = audio.createOscillator();
         const gain = audio.createGain();
         osc.frequency.value = 880;
@@ -57,7 +78,10 @@ function useTurnPing(isMyTurn: boolean) {
         osc.connect(gain).connect(audio.destination);
         osc.start();
         osc.stop(audio.currentTime + 0.25);
-        osc.onended = () => audio.close();
+        osc.onended = () => {
+          osc.disconnect();
+          gain.disconnect();
+        };
       } catch {
         // no audio available — fine
       }

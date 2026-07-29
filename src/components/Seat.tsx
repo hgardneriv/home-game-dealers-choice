@@ -90,12 +90,15 @@ export function Seat({
 
       {/* Plate */}
       <div
-        className={`relative z-10 w-full overflow-hidden rounded-xl border px-2 py-1.5 text-center shadow-lg backdrop-blur-[2px] transition-colors ${
+        // No backdrop-blur here: a blur layer per seat over the felt gradient,
+        // re-sampled every frame while the timer animates, can wedge the GPU
+        // process on older iOS Safari (black screen). Solid tint reads the same.
+        className={`relative z-10 w-full overflow-hidden rounded-xl border px-2 py-1.5 text-center shadow-lg transition-colors ${
           isWinner
-            ? 'border-amber-300 bg-amber-500/25'
+            ? 'border-amber-300 bg-amber-600/40'
             : isActing
-              ? 'border-amber-400 bg-black/65'
-              : 'border-white/15 bg-black/60'
+              ? 'border-amber-400 bg-black/75'
+              : 'border-white/15 bg-black/70'
         }`}
       >
         <div className="truncate text-xs font-semibold text-white">
@@ -119,14 +122,15 @@ export function Seat({
         {timerFraction !== null && (
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/10">
             <div
-              className={`h-full ${
+              className={`h-full w-full origin-left ${
                 timerFraction > 0.4
                   ? 'bg-emerald-400'
                   : timerFraction > 0.15
                     ? 'bg-amber-400'
                     : 'bg-red-500'
               }`}
-              style={{ width: `${timerFraction * 100}%`, transition: 'width 250ms linear' }}
+              // scaleX, not width: compositor-only, no layout/repaint per tick.
+              style={{ transform: `scaleX(${timerFraction})`, transition: 'transform 250ms linear' }}
             />
           </div>
         )}
