@@ -1,0 +1,143 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
+import type { GameApi } from '@/hooks/useGame';
+import { PlayingCard } from './PlayingCard';
+
+export function Seat({
+  game,
+  seatIndex,
+  playerId,
+}: {
+  game: GameApi;
+  seatIndex: number;
+  playerId: string | null;
+}) {
+  const state = game.state!;
+  const hand = state.hand;
+  const player = playerId ? state.players[playerId] : null;
+
+  const isActing = !!player && hand?.toAct === player.id && state.phase === 'playing';
+
+  // Smooth countdown: tick every 250ms while acting; the bar interpolates.
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!isActing) return;
+    const t = setInterval(() => forceTick((n) => n + 1), 250);
+    return () => clearInterval(t);
+  }, [isActing]);
+
+  if (!player) {
+    return (
+      <div className="flex h-14 w-20 items-center justify-center rounded-2xl border border-dashed border-white/20 text-[11px] text-white/40">
+        open seat
+      </div>
+    );
+  }
+
+  const inHand = hand?.inHand.includes(player.id) ?? false;
+  const folded = hand?.folded.includes(player.id) ?? false;
+  const allIn = hand?.allIn.includes(player.id) ?? false;
+  const isYou = player.id === state.yourId;
+  const isWinner =
+    (hand?.result?.pots.some((p) => p.winners.includes(player.id)) ?? false) &&
+    state.phase !== 'playing';
+  const revealed = hand?.result?.revealed[player.id];
+  const showCards = isYou ? hand?.myCards : revealed;
+  const description = hand?.result?.descriptions[player.id];
+
+  const timerFraction = (() => {
+    if (!isActing || !hand?.actionDeadline) return null;
+    const total = state.config.actionTimeMs;
+    const left = hand.actionDeadline - game.serverNow();
+    return Math.max(0, Math.min(1, left / total));
+  })();
+
+  const badge =
+    hand && !hand.deadSb && hand.sbSeat === seatIndex
+      ? 'SB'
+      : hand && hand.bbSeat === seatIndex
+        ? 'BB'
+        : null;
+
+  return (
+    <motion.div
+      // Your own folded seat stays a bit more legible so you can read your cards.
+      animate={{ opacity: folded ? (isYou ? 0.65 : 0.45) : 1 }}
+      className="flex w-max min-w-24 max-w-36 flex-col items-center sm:max-w-48"
+    >
+      {/* Cards peeking above the plate. After folding, you (and only you)
+          still see your own cards greyed out — to watch what might have been. */}
+      <div
+        className={`z-0 flex gap-0.5 ${isYou ? '-mb-3' : '-mb-2'} ${
+          folded ? 'opacity-70 grayscale' : ''
+        }`}
+      >
+        {inHand && !folded && !showCards && (
+          <>
+            <PlayingCard size="sm" />
+            <PlayingCard size="sm" />
+          </>
+        )}
+        {inHand && showCards && (!folded || isYou) && (
+          <>
+            <PlayingCard card={showCards[0]} size={isYou ? 'md' : 'sm'} dealt />
+            <PlayingCard card={showCards[1]} size={isYou ? 'md' : 'sm'} dealt />
+          </>
+        )}
+      </div>
+
+      {/* Plate */}
+      <div
+        className={`relative z-10 w-full overflow-hidden rounded-xl border px-2 py-1.5 text-center shadow-lg backdrop-blur-[2px] transition-colors ${
+          isWinner
+            ? 'border-amber-300 bg-amber-500/25'
+            : isActing
+              ? 'border-amber-400 bg-black/65'
+              : 'border-white/15 bg-black/60'
+        }`}
+      >
+        <div className="truncate text-xs font-semibold text-white">
+          {player.isBot ? '🤖 ' : ''}
+          {player.name}
+          {isYou ? <span className="opacity-60"> · you</span> : ''}
+        </div>
+        <div className="text-xs font-bold text-amber-300">
+          {player.status === 'busted' ? (
+            <span className="text-red-400">busted</span>
+          ) : allIn && state.phase === 'playing' ? (
+            <span className="text-red-300">ALL IN</span>
+          ) : (
+            <>${player.stack}</>
+          )}
+          {badge && <span className="ml-1 font-medium text-white/50">{badge}</span>}
+          {player.status === 'away' && <span className="ml-1">💤</span>}
+        </div>
+
+        {/* Turn timer bar */}
+        {timerFraction !== null && (
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/10">
+            <div
+              className={`h-full ${
+                timerFraction > 0.4
+                  ? 'bg-emerald-400'
+                  : timerFraction > 0.15
+                    ? 'bg-amber-400'
+                    : 'bg-red-500'
+              }`}
+              style={{ width: `${timerFraction * 100}%`, transition: 'width 250ms linear' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Showdown hand description */}
+      {description && isWinner && (
+        <div className="z-10 mt-0.5 whitespace-nowrap rounded bg-black/60 px-1.5 text-[10px] text-amber-200">
+          {description}
+        </div>
+      )}
+    </motion.div>
+  );
+}
