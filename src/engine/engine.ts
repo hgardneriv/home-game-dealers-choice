@@ -95,6 +95,7 @@ export function createGame(opts: {
     seats: [opts.hostId, null, null, null, null, null],
     seatRequests: [],
     hand: null,
+    carryPot: 0,
     choosing: null,
     nextHandAt: null,
     pauseAfterHand: false,
@@ -269,8 +270,6 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       const variant = getVariant(hand.variant);
       const res = variant.exchange!.apply(vctx(m), action.playerId, action.move);
       if ('error' in res) return fail(res.error.code, res.error.message);
-      if (!hand.round.actedSinceFullRaise.includes(action.playerId))
-        hand.round.actedSinceFullRaise.push(action.playerId);
       emit(m, 'action', {
         playerId: action.playerId,
         move: res.applied.move,
@@ -278,6 +277,16 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
         street: hand.round.street,
         auto: false,
       });
+      if (res.turnContinues) {
+        // Multi-step turn (ace call → wager; repeated flips): same player,
+        // fresh clock.
+        hand.round.actionDeadline = null;
+        hand.round.botActAt = null;
+        advance(m);
+        return done();
+      }
+      if (!hand.round.actedSinceFullRaise.includes(action.playerId))
+        hand.round.actedSinceFullRaise.push(action.playerId);
       hand.round.toAct = nextToAct(hand, action.playerId);
       hand.round.actionDeadline = null;
       hand.round.botActAt = null;
@@ -354,7 +363,7 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
 
       const legal = getLegalActions(state, acting)!;
       if (legal.kind === 'exchange') {
-        // Auto-play the variant's safe default (e.g. stand pat).
+        // Auto-play the variant's safe default (e.g. stand pat, forced flip).
         const variant = getVariant(hand.variant);
         const res = variant.exchange!.apply(vctx(m), acting, legal.autoMove);
         if (!('error' in res)) {
@@ -365,6 +374,18 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
             street: hand.round.street,
             auto: true,
           });
+          if (res.turnContinues) {
+            // Same player still owes a step; the away/instant deadline makes
+            // the sweep drive the remaining forced moves one tick at a time.
+            if (!player.isBot && player.status === 'seated') {
+              player.status = 'away';
+              emit(m, 'player-away', { playerId: acting });
+            }
+            hand.round.actionDeadline = null;
+            hand.round.botActAt = null;
+            advance(m);
+            return done();
+          }
         }
         if (!hand.round.actedSinceFullRaise.includes(acting))
           hand.round.actedSinceFullRaise.push(acting);
@@ -433,11 +454,14 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       if (notHost) return notHost;
       if (state.phase === 'ended') return fail('bad-phase', 'Game is already over');
       // Return any chips still in the pot to their owners so final standings
-      // reflect real money, then discard the unfinished hand.
+      // reflect real money, then discard the unfinished hand. The communal
+      // fund has no owners — endGame splits it evenly via carryPot.
       if (state.hand && !state.hand.result) {
         for (const [id, amount] of Object.entries(state.hand.totalCommitted)) {
           state.players[id].stack += amount;
         }
+        state.carryPot += state.hand.pot;
+        state.hand.pot = 0;
       }
       state.hand = null;
       endGame(m, null, 'host');
@@ -649,6 +673,7 @@ function startHand(m: Mutable, variantId: VariantId): void {
     folded: [],
     allIn: [],
     totalCommitted: {},
+    pot: 0,
     round: freshRound(state.config, 'betting', 'ante'),
     vstate: {},
     result: null,
@@ -659,36 +684,55 @@ function startHand(m: Mutable, variantId: VariantId): void {
   state.nextHandAt = null;
   state.choosing = null;
 
+  // Chips owed from earlier hands (guts matches, an unfinished in-between
+  // pot) seed this hand's pot — whatever game the dealer called.
+  hand.pot = state.carryPot;
+  state.carryPot = 0;
+
   emit(m, 'hand-started', {
     handNo: hand.handNo,
     variant: variantId,
     variantName: variant.name,
     buttonSeat: hand.buttonSeat,
     inHand: hand.inHand,
+    carried: hand.pot,
   });
 
   // Everyone dealt in antes (short stacks ante all-in — side pots handle it).
+  // Communal-pot games (in-between) ante into the shared fund instead.
+  const communal = variant.potStyle === 'communal';
   for (const id of hand.inHand) {
     const player = state.players[id];
     const chips = Math.min(state.config.ante, player.stack);
     player.stack -= chips;
-    hand.totalCommitted[id] = chips;
+    if (communal) hand.pot += chips;
+    else hand.totalCommitted[id] = chips;
     if (player.stack === 0) hand.allIn.push(id);
   }
   emit(m, 'antes-posted', {
     amount: state.config.ante,
     playerIds: [...hand.inHand],
-    potTotal: Object.values(hand.totalCommitted).reduce((a, b) => a + b, 0),
+    potTotal:
+      Object.values(hand.totalCommitted).reduce((a, b) => a + b, 0) + hand.pot,
   });
 
   const plan = variant.deal(vctx(m));
   if (plan.kind === 'showdown') {
     // Degenerate variant contract — settle immediately rather than wedge.
-    finishHand(m, resolveShowdown(hand, variant.score, variant.describeScore), 'showdown');
+    finishHand(m, resolveHand(variant, hand), 'showdown');
     return;
   }
   openRound(m, plan);
   advance(m);
+}
+
+/** Standard showdown scoring, or the variant's custom resolution. */
+function resolveHand(
+  variant: GameVariant,
+  hand: HandState
+): ReturnType<typeof resolveShowdown> {
+  if (variant.resolve) return variant.resolve(hand);
+  return resolveShowdown(hand, variant.score, variant.describeScore);
 }
 
 /** Fresh turn-taking round of the given kind. */
@@ -719,7 +763,12 @@ function freshRound(
 function openRound(m: Mutable, plan: { kind: 'betting' | 'exchange'; street: string }): void {
   const hand = m.state.hand!;
   hand.round = freshRound(m.state.config, plan.kind, plan.street);
-  hand.round.toAct = nextToAct(hand, null);
+  // Default opener is left of the button; a variant may override (stud's
+  // "highest board showing acts first").
+  const variant = getVariant(hand.variant);
+  hand.round.toAct = variant.firstToAct
+    ? variant.firstToAct(m.state, hand)
+    : nextToAct(hand, null);
 }
 
 /**
@@ -751,7 +800,7 @@ function advance(m: Mutable): void {
   for (;;) {
     const plan: PhasePlan = variant.nextPhase(vctx(m));
     if (plan.kind === 'showdown') {
-      finishHand(m, resolveShowdown(hand, variant.score, variant.describeScore), 'showdown');
+      finishHand(m, resolveHand(variant, hand), 'showdown');
       return;
     }
     openRound(m, plan);
@@ -807,6 +856,47 @@ function finishHand(
   for (const [id, amount] of Object.entries(resolution.payouts)) {
     state.players[id].stack += amount;
   }
+
+  const variant = getVariant(hand.variant);
+
+  // The communal fund (carried chips + communal antes): main-pot winners take
+  // it at showdown/fold-win; custom-resolve games (in-between) manage it
+  // themselves and any leftover rolls to the next hand.
+  if (hand.pot > 0) {
+    const winners = variant.resolve ? [] : (resolution.result.pots[0]?.winners ?? []);
+    if (winners.length > 0) {
+      const base = Math.floor(hand.pot / winners.length);
+      let remainder = hand.pot - base * winners.length;
+      for (const id of winners) {
+        const share = base + (remainder > 0 ? 1 : 0);
+        if (remainder > 0) remainder--;
+        state.players[id].stack += share;
+      }
+      if (resolution.result.pots[0]) resolution.result.pots[0].amount += hand.pot;
+    } else {
+      state.carryPot += hand.pot;
+      emit(m, 'pot-carried', { amount: hand.pot });
+    }
+    hand.pot = 0;
+  }
+
+  // Pot-matching settlement (guts): losers pay into the NEXT hand's pot,
+  // capped at their stack — table stakes, chip conservation intact.
+  const settled = variant.settle?.(vctx(m)) ?? null;
+  if (settled) {
+    let collected = 0;
+    for (const [id, amount] of Object.entries(settled.payments)) {
+      const player = state.players[id];
+      const pay = Math.max(0, Math.min(Math.floor(amount), player.stack));
+      if (pay === 0) continue;
+      player.stack -= pay;
+      collected += pay;
+      emit(m, 'pot-matched', { playerId: id, amount: pay });
+    }
+    const carry = Math.max(0, Math.floor(settled.carry));
+    if (collected + carry > 0) state.carryPot += collected + carry;
+  }
+
   emit(m, 'hand-result', {
     handNo: hand.handNo,
     variant: hand.variant,
@@ -816,6 +906,7 @@ function finishHand(
     descriptions: resolution.result.descriptions,
     refunds: resolution.result.refunds,
     board: [...hand.board],
+    carryPot: state.carryPot,
   });
 
   for (const player of Object.values(state.players)) {
@@ -893,10 +984,27 @@ function endGame(
   winnerId: string | null,
   reason: 'host' | 'lastPlayer' = 'lastPlayer'
 ): void {
-  m.state.phase = 'ended';
-  m.state.nextHandAt = null;
-  m.state.choosing = null;
-  m.state.endedReason = reason;
+  const { state } = m;
+  // Chips owed to a next hand that will never come: split evenly among the
+  // seated players (remainder by seat order) so final standings add up.
+  if (state.carryPot > 0) {
+    const seated = state.seats.filter((id): id is string => id !== null);
+    const recipients = seated.length > 0 ? seated : Object.keys(state.players);
+    if (recipients.length > 0) {
+      const base = Math.floor(state.carryPot / recipients.length);
+      let remainder = state.carryPot - base * recipients.length;
+      for (const id of recipients) {
+        const share = base + (remainder > 0 ? 1 : 0);
+        if (remainder > 0) remainder--;
+        state.players[id].stack += share;
+      }
+      state.carryPot = 0;
+    }
+  }
+  state.phase = 'ended';
+  state.nextHandAt = null;
+  state.choosing = null;
+  state.endedReason = reason;
   emit(m, 'game-ended', { winnerId, reason });
 }
 

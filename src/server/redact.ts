@@ -12,6 +12,7 @@ import type {
 } from '@/engine/types';
 import type { GameState } from '@/engine/types';
 import { getLegalActions } from '@/engine/betting';
+import { getVariant } from '@/engine/variants/registry';
 
 /**
  * The client-facing view of a game. A DISTINCT type from GameState so the
@@ -29,6 +30,8 @@ export interface ClientGameState {
   seats: (string | null)[];
   seatRequests: SeatRequest[];
   hand: ClientHand | null;
+  /** Chips rolling into the next hand's pot (guts matches, in-between leftovers). */
+  carryPot: number;
   /** Set while the dealer is picking the next game (M2+). */
   choosing: { buttonSeat: number; dealerId: string; deadline: number } | null;
   nextHandAt: number | null;
@@ -116,13 +119,19 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
       allIn: [...h.allIn],
       committed: { ...h.round.committed },
       totalCommitted: { ...h.totalCommitted },
-      potTotal: Object.values(h.totalCommitted).reduce((a, b) => a + b, 0),
+      potTotal: Object.values(h.totalCommitted).reduce((a, b) => a + b, 0) + h.pot,
       street: h.round.street,
       roundKind: h.round.kind,
       currentBet: h.round.currentBet,
       toAct: h.round.toAct,
       actionDeadline: h.round.actionDeadline,
-      myCards: playerId && h.playerCards[playerId] ? [...h.playerCards[playerId].cards] : null,
+      // No-peek games hide even your own face-down cards from you.
+      myCards:
+        playerId && h.playerCards[playerId]
+          ? getVariant(h.variant).noPeek
+            ? h.playerCards[playerId].cards.filter((_, i) => h.playerCards[playerId].faceUp[i])
+            : [...h.playerCards[playerId].cards]
+          : null,
       publicCards,
       cardCounts,
       legalActions:
@@ -142,6 +151,7 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
     seats: [...state.seats],
     seatRequests: [...state.seatRequests],
     hand,
+    carryPot: state.carryPot ?? 0,
     choosing: state.choosing
       ? {
           buttonSeat: state.choosing.buttonSeat,

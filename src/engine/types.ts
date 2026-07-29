@@ -143,6 +143,13 @@ export interface HandState {
   allIn: string[];
   /** Whole-hand contributions per player (incl. antes) — input to side-pot construction. */
   totalCommitted: Record<string, number>;
+  /**
+   * Communal pot fund: carried chips from earlier hands, plus antes for
+   * variants with potStyle 'communal' (in-between). Awarded to the main-pot
+   * winners at showdown/fold-win; custom-resolve variants manage it directly
+   * and any leftover carries to the next hand.
+   */
+  pot: number;
   round: BettingRound;
   /** Variant-private JSON-safe scratch (e.g. five-draw's drawDone flag). */
   vstate: Record<string, unknown>;
@@ -180,6 +187,12 @@ export interface GameState {
   seats: (string | null)[];
   seatRequests: SeatRequest[];
   hand: HandState | null;
+  /**
+   * Chips owed to the NEXT hand's pot: guts losers matching the pot, an
+   * in-between pot that outlived its hand. Disbursed evenly among seated
+   * players if the game ends while non-zero.
+   */
+  carryPot: number;
   /** Set while phase === 'choosing'; null otherwise. */
   choosing: ChoosingState | null;
   /** Epoch ms when the next hand auto-starts (between-hands pause). */
@@ -202,10 +215,15 @@ export interface GameState {
 export type PlayerMove = 'fold' | 'check' | 'call' | 'bet' | 'raise';
 
 /**
- * Variant-specific non-betting moves, one union member per mechanic. Grown as
- * variants ship; the engine routes them to the hand's variant module.
+ * Variant-specific non-betting moves, one union member per mechanic. The
+ * engine routes them to the hand's variant module for validation/application.
  */
-export type VariantMoveInput = { kind: 'discard'; cardIndexes: number[] };
+export type VariantMoveInput =
+  | { kind: 'discard'; cardIndexes: number[] } // five-card draw
+  | { kind: 'declare'; choice: 'in' | 'out' } // guts
+  | { kind: 'flip' } // no-peek/baseball
+  | { kind: 'wager'; amount: number } // in-between; 0 = pass
+  | { kind: 'aceCall'; high: boolean }; // in-between first-card ace
 
 export type Action =
   | { type: 'requestSeat'; playerId: string; name: string; seat: number }
@@ -268,7 +286,12 @@ export interface BettingLegal {
 }
 
 /** What a variant move may look like right now, for rendering and validation. */
-export type VariantMoveSpec = { kind: 'discard'; min: number; max: number };
+export type VariantMoveSpec =
+  | { kind: 'discard'; min: number; max: number }
+  | { kind: 'declare' }
+  | { kind: 'flip' }
+  | { kind: 'wager'; min: number; max: number }
+  | { kind: 'aceCall' };
 
 export interface ExchangeLegal {
   kind: 'exchange';

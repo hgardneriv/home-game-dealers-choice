@@ -136,11 +136,12 @@ export class Table {
 
   totalChips(): number {
     const stacks = Object.values(this.state.players).reduce((a, p) => a + p.stack, 0);
-    const pot = this.state.hand
+    const committed = this.state.hand
       ? Object.values(this.state.hand.totalCommitted).reduce((a, b) => a + b, 0)
       : 0;
+    const communal = (this.state.hand?.pot ?? 0) + (this.state.carryPot ?? 0);
     // Chips already paid out are back in stacks once a result exists.
-    return this.state.hand?.result ? stacks : stacks + pot;
+    return (this.state.hand?.result ? stacks : stacks + committed) + communal;
   }
 
   /**

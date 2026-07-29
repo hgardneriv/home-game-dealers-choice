@@ -1,7 +1,32 @@
 import { withGame } from '@/server/store';
 import { playerIdFromRequest } from '@/server/identity';
 import { json, readJson, storeResponse } from '@/server/api';
-import type { PlayerMove, VariantId } from '@/engine/types';
+import type { PlayerMove, VariantId, VariantMoveInput } from '@/engine/types';
+
+/** Whitelist-shape a wire variant move; null = malformed. */
+function parseVariantMove(body: Record<string, unknown>): VariantMoveInput | null {
+  switch (String(body.kind ?? (Array.isArray(body.cardIndexes) ? 'discard' : ''))) {
+    case 'discard': {
+      const raw: unknown[] = Array.isArray(body.cardIndexes) ? body.cardIndexes : [];
+      const cardIndexes = raw.filter((n): n is number => Number.isInteger(n)).slice(0, 10);
+      return { kind: 'discard', cardIndexes };
+    }
+    case 'declare': {
+      const choice = String(body.choice ?? '');
+      return choice === 'in' || choice === 'out' ? { kind: 'declare', choice } : null;
+    }
+    case 'flip':
+      return { kind: 'flip' };
+    case 'wager': {
+      const amount = Number(body.amount ?? NaN);
+      return Number.isInteger(amount) && amount >= 0 ? { kind: 'wager', amount } : null;
+    }
+    case 'aceCall':
+      return { kind: 'aceCall', high: body.high === true };
+    default:
+      return null;
+  }
+}
 import { getLegalActions } from '@/engine/betting';
 
 export const dynamic = 'force-dynamic';
@@ -43,15 +68,16 @@ export async function POST(
     return storeResponse(result, playerId);
   }
 
-  // Exchange-round move (draw). Shape-check only — the variant module
-  // validates counts/indexes through the same path getLegalActions exposes.
+  // Exchange-round move. Shape-check only — the variant module validates
+  // semantics through the same path getLegalActions exposes.
   if (move === 'variantMove') {
-    const raw: unknown[] = Array.isArray(body.cardIndexes) ? body.cardIndexes : [];
-    const cardIndexes = raw.filter((n): n is number => Number.isInteger(n)).slice(0, 10);
+    const parsed = parseVariantMove(body);
+    if (!parsed)
+      return json({ error: { code: 'bad-request', message: 'Unknown variant move' } }, 400);
     const result = await withGame(gameId, () => ({
       type: 'variantMove',
       playerId,
-      move: { kind: 'discard', cardIndexes },
+      move: parsed,
     }));
     return storeResponse(result, playerId);
   }

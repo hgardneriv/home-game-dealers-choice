@@ -54,8 +54,13 @@ export function buildBotView(state: GameState, botId: string): BotView | null {
     const up = pc.cards.filter((_, i) => pc.faceUp[i]);
     if (up.length > 0) publicCards[id] = up;
   }
+  const own = hand.playerCards[botId];
+  // No-peek games: the bot is as blind to its own down cards as a human.
+  const hole = getVariant(hand.variant).noPeek
+    ? own.cards.filter((_, i) => own.faceUp[i])
+    : [...own.cards];
   return {
-    hole: [...hand.playerCards[botId].cards],
+    hole,
     board: [...hand.board],
     publicCards,
     potTotal,

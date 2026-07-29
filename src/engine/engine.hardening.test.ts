@@ -233,6 +233,7 @@ describe('ante posting', () => {
       variantName: "Texas Hold'em",
       buttonSeat: 0,
       inHand: ['p1', 'p2', 'p0'],
+      carried: 0,
     });
     expect(data(evs[1])).toEqual({ amount: 1, playerIds: ['p1', 'p2', 'p0'], potTotal: 3 });
     expect(data(evs[2])).toMatchObject({ playerId: 'p1', street: 'preflop' });

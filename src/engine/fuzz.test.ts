@@ -22,11 +22,12 @@ import type { EngineCtx, GameState, PlayerMove, VariantId, VariantMoveInput } fr
 
 function totalChips(state: GameState): number {
   const stacks = Object.values(state.players).reduce((a, p) => a + p.stack, 0);
-  const pot = state.hand
+  const committed = state.hand
     ? Object.values(state.hand.totalCommitted).reduce((a, b) => a + b, 0)
     : 0;
+  const communal = (state.hand?.pot ?? 0) + state.carryPot;
   // After a result, payouts are already back in stacks.
-  return state.hand && !state.hand.result ? stacks + pot : stacks;
+  return (state.hand && !state.hand.result ? stacks + committed : stacks) + communal;
 }
 
 /** Top-ups inject chips, so "constant total" is really "sum of all buy-ins". */

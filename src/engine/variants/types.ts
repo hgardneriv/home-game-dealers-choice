@@ -2,6 +2,7 @@ import type {
   Card,
   ExchangeLegal,
   GameState,
+  HandResult,
   HandState,
   TableConfig,
   VariantId,
@@ -46,6 +47,36 @@ export interface GameVariant {
   /** 52-card feasibility for this many dealt-in players. */
   fitsPlayers(count: number): boolean;
 
+  /**
+   * Where antes go. 'committed' (default): per-player totalCommitted, side
+   * pots built normally. 'communal': straight into hand.pot — for games where
+   * the pot changes hands mid-play (in-between).
+   */
+  potStyle?: 'committed' | 'communal';
+
+  /**
+   * No-peek games (baseball): players cannot see even their OWN face-down
+   * cards — redaction and the bot view show only flipped cards until the
+   * hand's result reveals the rest.
+   */
+  noPeek?: boolean;
+
+  /**
+   * Who opens a fresh round; default is left of the button (inHand[0]).
+   * Stud overrides with "highest board showing".
+   */
+  firstToAct?(state: GameState, hand: HandState): string | null;
+
+  /**
+   * Full custom hand resolution replacing the standard showdown (in-between:
+   * chips already moved during play; nothing to score). Leftover hand.pot
+   * carries to the next hand automatically.
+   */
+  resolve?(hand: HandState): {
+    result: HandResult;
+    payouts: Record<string, number>;
+  };
+
   /** Antes are already posted. Deal initial cards via v.draw; return the first phase. */
   deal(v: VariantCtx): PhasePlan;
 
@@ -63,11 +94,17 @@ export interface GameVariant {
   /** Exchange-phase behavior (absent for variants with betting phases only). */
   exchange?: {
     legal(state: GameState, playerId: string): ExchangeLegal;
+    /**
+     * Apply a move. `turnContinues: true` keeps the same player to act with a
+     * fresh clock (multi-step turns: ace call then wager; repeated flips).
+     */
     apply(
       v: VariantCtx,
       playerId: string,
       move: VariantMoveInput
-    ): { applied: { move: string; detail?: unknown } } | { error: MoveError };
+    ):
+      | { applied: { move: string; detail?: unknown }; turnContinues?: boolean }
+      | { error: MoveError };
   };
 
   /**

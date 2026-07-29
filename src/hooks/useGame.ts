@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClientGameState } from '@/server/redact';
-import type { PlayerMove, VariantId } from '@/engine/types';
+import type { PlayerMove, VariantId, VariantMoveInput } from '@/engine/types';
 
 export interface GameApi {
   state: ClientGameState | null;
@@ -15,6 +15,8 @@ export interface GameApi {
   chooseGame: (variant: VariantId) => Promise<string | null>;
   /** Exchange-round move (five-card draw): discard the given card indexes. */
   draw: (cardIndexes: number[]) => Promise<string | null>;
+  /** Any exchange-round move (declare/flip/wager/aceCall/...). */
+  variantMove: (move: VariantMoveInput) => Promise<string | null>;
   hostOp: (op: string, playerId?: string) => Promise<string | null>;
   seatOp: (op: 'approve' | 'deny', playerId: string) => Promise<string | null>;
   refresh: () => void;
@@ -139,7 +141,8 @@ export function useGame(gameId: string): GameApi {
     },
     act: (move, amount, expectedCall) => post('action', { move, amount, expectedCall }),
     chooseGame: (variant) => post('action', { move: 'chooseGame', variant }),
-    draw: (cardIndexes) => post('action', { move: 'variantMove', cardIndexes }),
+    draw: (cardIndexes) => post('action', { move: 'variantMove', kind: 'discard', cardIndexes }),
+    variantMove: (mv) => post('action', { move: 'variantMove', ...mv }),
     hostOp: (op, playerId) => post('host', { op, playerId }),
     seatOp: (op, playerId) => post('seats', { op, playerId }),
     refresh,

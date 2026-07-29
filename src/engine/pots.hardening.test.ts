@@ -20,6 +20,7 @@ const mkHand = (over: Partial<HandState>): HandState => ({
   folded: [],
   allIn: [],
   totalCommitted: {},
+  pot: 0,
   round: {
     street: 'river',
     kind: 'betting',
