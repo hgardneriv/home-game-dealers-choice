@@ -34,7 +34,7 @@ export function JoinScreen({ game }: { game: GameApi }) {
       <div className="text-center">
         <h1 className="text-2xl font-bold">🃏 You&apos;re invited!</h1>
         <p className="mt-2 text-sm opacity-70">
-          {hostName ? `${hostName} is hosting a game of Texas Hold'em.` : 'Take a seat at the table.'}
+          {hostName ? `${hostName} is hosting poker night.` : 'Take a seat at the table.'}
         </p>
       </div>
       <input

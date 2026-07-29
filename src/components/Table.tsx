@@ -91,8 +91,11 @@ export function Table({ game }: { game: GameApi }) {
   const mySeat = state.yourId ? (state.players[state.yourId]?.seat ?? 0) : 0;
   const posFor = (seatIndex: number) => positions[(seatIndex - mySeat + 6) % 6];
 
-  const variant = hand ? getVariant(hand.variant) : null;
+  const choosing = state.phase === 'choosing' ? state.choosing : null;
+  // While the dealer picks, the marquee flips back to the brand.
+  const variant = hand && !choosing ? getVariant(hand.variant) : null;
   const result = hand?.result ?? null;
+  const discSeat = choosing ? choosing.buttonSeat : hand?.buttonSeat ?? null;
   const winnersLine = (() => {
     if (!result || !hand) return null;
     const total: Record<string, number> = {};
@@ -270,14 +273,14 @@ export function Table({ game }: { game: GameApi }) {
         )}
       </AnimatePresence>
 
-      {/* Dealer button */}
-      {hand && (
+      {/* Dealer button — during choosing it sits with the picking dealer */}
+      {discSeat !== null && (
         <motion.div
           layout
           transition={{ type: 'spring', stiffness: 300, damping: 25 }}
           className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
           style={(() => {
-            const p = lerp(posFor(hand.buttonSeat), CENTER, 0.22);
+            const p = lerp(posFor(discSeat), CENTER, 0.22);
             return { left: `${p.x - 4}%`, top: `${p.y}%` };
           })()}
         >

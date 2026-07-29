@@ -11,6 +11,12 @@ function describeEvent(event: GameEvent, names: (id: string) => string): string 
       return `— Hand #${d.handNo}: ${String(d.variantName ?? '')} —`;
     case 'antes-posted':
       return `Everyone antes $${d.amount}`;
+    case 'choosing-game':
+      return `${names(String(d.playerId ?? d.dealerId))} has the deal — picking the game`;
+    case 'game-chosen':
+      return d.auto
+        ? `Time's up — ${String(d.variantName)} continues`
+        : `${names(String(d.dealerId))} calls ${String(d.variantName)}`;
     case 'action': {
       const move = String(d.move);
       const auto = d.auto ? ' (auto)' : '';

@@ -12,7 +12,7 @@ export function InviteButton({ gameId }: { gameId: string }) {
       try {
         await navigator.share({
           title: 'Poker night!',
-          text: 'Join my Texas Hold’em table:',
+          text: 'Join my poker table:',
           url,
         });
         return;

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { GameApi } from '@/hooks/useGame';
 import { topUpAmount } from '@/engine/topup';
+import { getVariant } from '@/engine/variants/registry';
 import { useToast } from './Toast';
 import { LeaveButton } from './LeaveButton';
 
@@ -28,14 +29,15 @@ export function ActionBar({ game }: { game: GameApi }) {
     setBusy(false);
   }
 
-  // While busted during a re-entry hold, tick so the countdown stays live.
+  // Tick while a countdown is visible (busted re-entry hold, dealer choosing).
   const busted = !!me && me.status === 'busted';
+  const choosing = state.phase === 'choosing' ? state.choosing : null;
   const [, forceTick] = useState(0);
   useEffect(() => {
-    if (!busted || state.phase !== 'hand-over') return;
+    if (!(busted && state.phase === 'hand-over') && !choosing) return;
     const t = setInterval(() => forceTick((n) => n + 1), 500);
     return () => clearInterval(t);
-  }, [busted, state.phase]);
+  }, [busted, state.phase, choosing]);
 
   const leave = me && !me.isHost ? <LeaveButton game={game} /> : null;
 
@@ -75,6 +77,49 @@ export function ActionBar({ game }: { game: GameApi }) {
           </span>
         )}
         {!leave && amount <= 0 && <span className="w-24" aria-hidden />}
+      </div>
+    );
+  }
+
+  // Dealer's choice: the dealer picks the next game; everyone else waits.
+  // Shown even to an away dealer — picking marks them back.
+  if (choosing) {
+    const dealer = state.players[choosing.dealerId];
+    const secsLeft = Math.max(0, Math.ceil((choosing.deadline - game.serverNow()) / 1000));
+    if (me && me.id === choosing.dealerId) {
+      return (
+        <div className="sticky bottom-0 flex flex-col gap-2 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <span className="text-center text-sm font-semibold text-amber-300">
+            🃏 Your deal — pick the game ({secsLeft}s)
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {state.config.enabledVariants.map((id) => (
+              <button
+                key={id}
+                className="flex-1 whitespace-nowrap rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
+                disabled={busy}
+                onClick={async () => {
+                  if (busy) return;
+                  setBusy(true);
+                  const error = await game.chooseGame(id);
+                  if (error) toast(error);
+                  setBusy(false);
+                }}
+              >
+                {getVariant(id).name}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="sticky bottom-0 flex items-center gap-3 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {leave}
+        <span className="flex-1 text-center text-sm text-white/60">
+          🃏 Waiting for {dealer?.name ?? 'the dealer'} to pick the game… ({secsLeft}s)
+        </span>
+        {leave && <span className="w-24" aria-hidden />}
       </div>
     );
   }

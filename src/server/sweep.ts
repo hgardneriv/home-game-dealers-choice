@@ -1,5 +1,5 @@
 import type { Action, GameState } from '@/engine/types';
-import { decideForBot } from '@/engine/bot';
+import { botChooseVariant, decideForBot } from '@/engine/bot';
 import { topUpAmount } from '@/engine/topup';
 
 /** Humans get a moment of slack past the visible deadline before auto-action. */
@@ -55,6 +55,25 @@ export function dueSweepAction(
       const grace = acting.isBot ? 0 : TIMEOUT_GRACE_MS;
       if (now >= round.actionDeadline + grace) return { type: 'timeout' };
     }
+    return null;
+  }
+
+  // Dealer's choice: a bot dealer picks after its think delay; an absent human
+  // dealer is auto-picked for (repeat-last) once the deadline passes. Both are
+  // re-validated by the engine (phase + dealer + enabled list), and chooseGame
+  // via botChooseVariant only proposes games that fit — a rejected due-action
+  // would wedge the sweep loop (see topUp note above).
+  if (state.phase === 'choosing' && state.choosing) {
+    const dealer = state.players[state.choosing.dealerId];
+    if (dealer?.isBot && state.choosing.botChooseAt !== null && now >= state.choosing.botChooseAt) {
+      return {
+        type: 'chooseGame',
+        playerId: dealer.id,
+        variant: botChooseVariant(state, randInt),
+      };
+    }
+    const grace = dealer?.isBot ? 0 : TIMEOUT_GRACE_MS;
+    if (now >= state.choosing.deadline + grace) return { type: 'chooseTimeout' };
     return null;
   }
 

@@ -27,6 +27,17 @@ function EventNotices({ game }: { game: GameApi }) {
     }
     for (const event of state.events) {
       if (event.seq <= lastSeq.current) continue;
+      if (event.type === 'game-chosen') {
+        const dd = event.data as { dealerId?: string; variantName?: string; auto?: boolean };
+        if (dd.dealerId && dd.dealerId !== state.yourId) {
+          const name = state.players[dd.dealerId]?.name ?? 'The dealer';
+          toast(
+            dd.auto ? `🃏 ${dd.variantName} continues` : `🃏 ${name} calls ${dd.variantName}`,
+            'info'
+          );
+        }
+        continue;
+      }
       const d = event.data as { playerId?: string; status?: string; amount?: number };
       if (!d.playerId || d.playerId === state.yourId) continue;
       const name = state.players[d.playerId]?.name ?? 'A player';

@@ -10,7 +10,7 @@ import type {
   VariantId,
 } from './types';
 import { newDeck, shuffle } from './deck';
-import { computeButton, eligiblePlayers, isEligible } from './seating';
+import { computeButton, eligiblePlayers, isEligible, seatingAt } from './seating';
 import { actors, active, applyMove, getLegalActions, nextToAct } from './betting';
 import { resolveFoldWin, resolveShowdown } from './showdown';
 import { topUpAmount } from './topup';
@@ -220,7 +220,7 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       if (state.phase !== 'lobby') return fail('bad-phase', 'Game already started');
       if (eligiblePlayers(state).length < 2)
         return fail('bad-phase', 'Need at least 2 players');
-      startHand(m, defaultVariant(state));
+      beginHand(m);
       return done();
     }
 
@@ -285,11 +285,53 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       return done();
     }
 
-    case 'chooseGame':
+    case 'chooseGame': {
+      if (state.phase !== 'choosing' || !state.choosing)
+        return fail('bad-phase', 'No game selection pending');
+      if (action.playerId !== state.choosing.dealerId)
+        return fail('not-your-turn', "It's not your deal");
+      if (!state.config.enabledVariants.includes(action.variant))
+        return fail('illegal-move', 'That game is not enabled');
+      const variant = getVariant(action.variant);
+      const count = eligiblePlayers(state).length;
+      if (count < variant.minPlayers || !variant.fitsPlayers(count))
+        return fail('illegal-move', `${variant.name} does not fit this table`);
+      const dealer = state.players[action.playerId];
+      if (dealer.status === 'away') {
+        dealer.status = 'seated';
+        emit(m, 'player-back', { playerId: dealer.id });
+      }
+      dealer.lastSeenAt = ctx.now;
+      emit(m, 'game-chosen', {
+        dealerId: action.playerId,
+        variant: action.variant,
+        variantName: variant.name,
+        auto: false,
+      });
+      startHand(m, action.variant);
+      return done();
+    }
+
     case 'chooseTimeout': {
-      // Dealer's-choice picking phase ships in M2; until then hands start
-      // directly with the session's default variant.
-      return fail('bad-phase', 'No game selection pending');
+      if (state.phase !== 'choosing' || !state.choosing)
+        return fail('bad-phase', 'No game selection pending');
+      if (ctx.now < state.choosing.deadline)
+        return fail('not-expired', 'The dealer still has time');
+      const dealer = state.players[state.choosing.dealerId];
+      // An absent dealer keeps the current game going (repeat the last variant).
+      const variantId = defaultVariant(state);
+      if (dealer && !dealer.isBot && dealer.status === 'seated') {
+        dealer.status = 'away';
+        emit(m, 'player-away', { playerId: dealer.id });
+      }
+      emit(m, 'game-chosen', {
+        dealerId: state.choosing.dealerId,
+        variant: variantId,
+        variantName: getVariant(variantId).name,
+        auto: true,
+      });
+      startHand(m, variantId);
+      return done();
     }
 
     case 'timeout': {
@@ -352,7 +394,7 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       if (state.phase !== 'hand-over') return fail('bad-phase', 'No hand pending');
       if (state.nextHandAt === null || ctx.now < state.nextHandAt)
         return fail('not-expired', 'Next hand not due yet');
-      startHand(m, defaultVariant(state));
+      beginHand(m);
       return done();
     }
 
@@ -362,9 +404,12 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       if (state.phase === 'playing') {
         state.pauseAfterHand = true;
         emit(m, 'pause-requested', {});
-      } else if (state.phase === 'hand-over') {
+      } else if (state.phase === 'hand-over' || state.phase === 'choosing') {
+        // No live pot in either phase — pause immediately. Resume re-enters
+        // the choosing flow via nextHand -> beginHand.
         state.phase = 'paused';
         state.nextHandAt = null;
+        state.choosing = null;
         emit(m, 'paused', {});
       } else {
         return fail('bad-phase', 'Nothing to pause');
@@ -526,9 +571,52 @@ export function defaultVariant(state: GameState): VariantId {
   return state.config.enabledVariants[0];
 }
 
+/**
+ * Between-hands entry point (startGame / nextHand / post-choosing recompute).
+ * With one enabled variant, deal straight in — a classic single-game night has
+ * zero picking latency. With more, park in 'choosing' until the dealer calls
+ * the game (or the sweep does it for them).
+ */
+function beginHand(m: Mutable): void {
+  const { state, ctx } = m;
+
+  if (state.config.enabledVariants.length <= 1) {
+    startHand(m, defaultVariant(state));
+    return;
+  }
+
+  const chipped = Object.values(state.players).filter((p) => isEligible(p));
+  if (chipped.length < 2) {
+    endGame(m, chipped[0]?.id ?? null);
+    return;
+  }
+  const seating = computeButton(state, state.hand?.buttonSeat ?? null, ctx.randInt);
+  if (!seating) {
+    endGame(m, null);
+    return;
+  }
+
+  const dealerId = state.seats[seating.buttonSeat]!;
+  const dealer = state.players[dealerId];
+  state.phase = 'choosing';
+  state.nextHandAt = null;
+  state.choosing = {
+    buttonSeat: seating.buttonSeat,
+    dealerId,
+    deadline: ctx.now + state.config.actionTimeMs,
+    botChooseAt: dealer.isBot
+      ? ctx.now + BOT_DELAY_BASE_MS + ctx.randInt(BOT_DELAY_JITTER_MS)
+      : null,
+  };
+  emit(m, 'choosing-game', {
+    dealerId,
+    buttonSeat: seating.buttonSeat,
+    options: [...state.config.enabledVariants],
+  });
+}
+
 function startHand(m: Mutable, variantId: VariantId): void {
   const { state, ctx } = m;
-  const prevButton = state.hand?.buttonSeat ?? null;
 
   const chipped = Object.values(state.players).filter((p) => isEligible(p));
   if (chipped.length < 2) {
@@ -536,7 +624,11 @@ function startHand(m: Mutable, variantId: VariantId): void {
     return;
   }
 
-  const seating = computeButton(state, prevButton, ctx.randInt);
+  // The choosing phase pinned the button before the hand existed; otherwise
+  // rotate from the previous hand's button.
+  const seating = state.choosing
+    ? seatingAt(state, state.choosing.buttonSeat)
+    : computeButton(state, state.hand?.buttonSeat ?? null, ctx.randInt);
   if (!seating) {
     endGame(m, null);
     return;
@@ -851,6 +943,12 @@ function removePlayer(m: Mutable, playerId: string, status: 'kicked' | 'left'): 
     // the game while a busted player could still rebuy — and a rebuyer leaving
     // mid-window should settle it for the winner immediately.
     settleOrHold(m);
+  } else if (state.phase === 'choosing') {
+    // Recompute the pick: the leaver may have been the dealer, or the table
+    // may no longer support a game. settleOrHold covers the can't-continue
+    // cases; otherwise re-enter choosing (or deal straight in) fresh.
+    state.choosing = null;
+    if (settleOrHold(m) === 'normal') beginHand(m);
   }
 }
 

@@ -1,7 +1,7 @@
 import { withGame } from '@/server/store';
 import { playerIdFromRequest } from '@/server/identity';
 import { json, readJson, storeResponse } from '@/server/api';
-import type { PlayerMove } from '@/engine/types';
+import type { PlayerMove, VariantId } from '@/engine/types';
 import { getLegalActions } from '@/engine/betting';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +32,14 @@ export async function POST(
   // taken from the wire.
   if (move === 'imBack' || move === 'leave' || move === 'topUp') {
     const result = await withGame(gameId, () => ({ type: move, playerId }));
+    return storeResponse(result, playerId);
+  }
+
+  // Dealer's call. The engine validates the variant against the enabled list
+  // and the sender against the choosing dealer — the route only shapes it.
+  if (move === 'chooseGame') {
+    const variant = String(body.variant ?? '') as VariantId;
+    const result = await withGame(gameId, () => ({ type: 'chooseGame', playerId, variant }));
     return storeResponse(result, playerId);
   }
 

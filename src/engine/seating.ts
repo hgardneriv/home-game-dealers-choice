@@ -62,6 +62,18 @@ export function computeButton(
     buttonSeat = nextEligibleSeat(state, prevButtonSeat);
   }
 
+  return seatingAt(state, buttonSeat);
+}
+
+/**
+ * Seating for a FIXED button seat (the choosing phase pins the button before
+ * the hand exists; eligibility is re-read at deal time). Null when fewer than
+ * two eligible players remain.
+ */
+export function seatingAt(state: GameState, buttonSeat: number): HandSeating | null {
+  const eligible = eligiblePlayers(state);
+  if (eligible.length < 2) return null;
+
   const n = state.config.maxSeats;
   const inHand: string[] = [];
   for (let i = 1; i <= n; i++) {

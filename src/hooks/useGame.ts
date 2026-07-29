@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClientGameState } from '@/server/redact';
-import type { PlayerMove } from '@/engine/types';
+import type { PlayerMove, VariantId } from '@/engine/types';
 
 export interface GameApi {
   state: ClientGameState | null;
@@ -11,6 +11,8 @@ export interface GameApi {
   serverNow: () => number;
   join: (name: string, seat: number) => Promise<string | null>;
   act: (move: PlayerMove | 'imBack' | 'leave' | 'topUp', amount?: number, expectedCall?: number) => Promise<string | null>;
+  /** Dealer's call: pick the next game while the table is choosing. */
+  chooseGame: (variant: VariantId) => Promise<string | null>;
   hostOp: (op: string, playerId?: string) => Promise<string | null>;
   seatOp: (op: 'approve' | 'deny', playerId: string) => Promise<string | null>;
   refresh: () => void;
@@ -134,6 +136,7 @@ export function useGame(gameId: string): GameApi {
       return err;
     },
     act: (move, amount, expectedCall) => post('action', { move, amount, expectedCall }),
+    chooseGame: (variant) => post('action', { move: 'chooseGame', variant }),
     hostOp: (op, playerId) => post('host', { op, playerId }),
     seatOp: (op, playerId) => post('seats', { op, playerId }),
     refresh,

@@ -1,8 +1,9 @@
-import type { BotPersonality, Card, GameState, LegalActions, PlayerMove } from './types';
+import type { BotPersonality, Card, GameState, LegalActions, PlayerMove, VariantId } from './types';
 import { rankValue, suitOf, type RandInt } from './deck';
 import { CATEGORY, evaluate5, evaluate7 } from './evaluator';
 import { getLegalActions } from './betting';
-import { getVariant } from './variants/registry';
+import { getVariant, isImplemented } from './variants/registry';
+import { eligiblePlayers } from './seating';
 
 /**
  * NPC decision-making. A bot decides from a narrow view built here — its own
@@ -223,4 +224,19 @@ export function decideForBot(
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * A bot dealer's pick: uniform over the enabled games that fit the current
+ * table. Personalities could weight this later.
+ */
+export function botChooseVariant(state: GameState, randInt: RandInt): VariantId {
+  const count = eligiblePlayers(state).length;
+  const options = state.config.enabledVariants.filter((id) => {
+    if (!isImplemented(id)) return false;
+    const v = getVariant(id);
+    return count >= v.minPlayers && v.fitsPlayers(count);
+  });
+  if (options.length === 0) return state.config.enabledVariants[0];
+  return options[randInt(options.length)];
 }
