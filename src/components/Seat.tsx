@@ -42,7 +42,10 @@ export function Seat({
     (hand?.result?.pots.some((p) => p.winners.includes(player.id)) ?? false) &&
     state.phase !== 'playing';
   const revealed = hand?.result?.revealed[player.id];
-  const showCards = isYou ? hand?.myCards : revealed;
+  // Empty = nothing to show (no-peek hides even your own down cards) — fall
+  // back to card backs rather than an empty seat.
+  const showCardsRaw = isYou ? hand?.myCards : revealed;
+  const showCards = showCardsRaw && showCardsRaw.length > 0 ? showCardsRaw : null;
   const description = hand?.result?.descriptions[player.id];
 
   const timerFraction = (() => {
@@ -87,10 +90,18 @@ export function Seat({
             ))}
           </>
         )}
-        {inHand && showCards && (!folded || isYou) &&
-          showCards.map((card) => (
-            <PlayingCard key={card} card={card} size={isYou ? 'md' : 'sm'} dealt />
-          ))}
+        {inHand && showCards && (!folded || isYou) && (
+          <>
+            {showCards.map((card) => (
+              <PlayingCard key={card} card={card} size={isYou ? 'md' : 'sm'} dealt />
+            ))}
+            {/* No-peek: your flipped cards plus backs for the rest. */}
+            {isYou &&
+              Array.from({ length: Math.max(0, cardCount - showCards.length) }).map((_, i) => (
+                <PlayingCard key={`own-back-${i}`} size="sm" />
+              ))}
+          </>
+        )}
       </div>
 
       {/* Plate */}

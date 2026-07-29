@@ -986,17 +986,23 @@ function endGame(
 ): void {
   const { state } = m;
   // Chips owed to a next hand that will never come: split evenly among the
-  // seated players (remainder by seat order) so final standings add up.
+  // live seated players (remainder by seat order) so final standings add up.
+  // Busted players only receive in the degenerate everyone-is-busted case —
+  // and then the chips un-bust them, keeping "busted means zero" true.
   if (state.carryPot > 0) {
     const seated = state.seats.filter((id): id is string => id !== null);
-    const recipients = seated.length > 0 ? seated : Object.keys(state.players);
+    const live = seated.filter((id) => state.players[id].status !== 'busted');
+    const recipients =
+      live.length > 0 ? live : seated.length > 0 ? seated : Object.keys(state.players);
     if (recipients.length > 0) {
       const base = Math.floor(state.carryPot / recipients.length);
       let remainder = state.carryPot - base * recipients.length;
       for (const id of recipients) {
         const share = base + (remainder > 0 ? 1 : 0);
         if (remainder > 0) remainder--;
-        state.players[id].stack += share;
+        const player = state.players[id];
+        player.stack += share;
+        if (player.status === 'busted' && player.stack > 0) player.status = 'seated';
       }
       state.carryPot = 0;
     }

@@ -47,7 +47,9 @@ export function buildBotView(state: GameState, botId: string): BotView | null {
   const legal = getLegalActions(state, botId);
   if (!legal) return null;
   const player = state.players[botId];
-  const potTotal = Object.values(hand.totalCommitted).reduce((a, b) => a + b, 0);
+  // Committed chips plus the communal fund (carried pots) — what's really at stake.
+  const potTotal =
+    Object.values(hand.totalCommitted).reduce((a, b) => a + b, 0) + hand.pot;
   const publicCards: Record<string, Card[]> = {};
   for (const [id, pc] of Object.entries(hand.playerCards)) {
     if (id === botId) continue;

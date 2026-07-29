@@ -56,15 +56,39 @@ function checkInvariants(state: GameState): void {
   }
 }
 
-/** A random legal draw: 0..3 distinct indexes out of a five-card hand. */
-function randomDiscard(randInt: (n: number) => number): VariantMoveInput {
-  const count = randInt(4);
-  const pool = [0, 1, 2, 3, 4];
-  const cardIndexes: number[] = [];
-  for (let i = 0; i < count; i++) {
-    cardIndexes.push(pool.splice(randInt(pool.length), 1)[0]);
+/** A random legal exchange move for whatever the variant offers right now. */
+function randomExchangeMove(
+  state: GameState,
+  playerId: string,
+  randInt: (n: number) => number
+): VariantMoveInput {
+  const legal = getLegalActions(state, playerId);
+  if (!legal || legal.kind !== 'exchange')
+    throw new Error(`expected exchange legal actions for ${playerId}`);
+  const spec = legal.moves[randInt(legal.moves.length)];
+  switch (spec.kind) {
+    case 'discard': {
+      const count = randInt(spec.max + 1);
+      const pool = [0, 1, 2, 3, 4];
+      const cardIndexes: number[] = [];
+      for (let i = 0; i < count; i++) {
+        cardIndexes.push(pool.splice(randInt(pool.length), 1)[0]);
+      }
+      return { kind: 'discard', cardIndexes };
+    }
+    case 'declare':
+      return { kind: 'declare', choice: randInt(2) === 0 ? 'in' : 'out' };
+    case 'flip':
+      return { kind: 'flip' };
+    case 'wager': {
+      // Overweight passes so in-between hands terminate briskly.
+      if (randInt(3) === 0) return { kind: 'wager', amount: 0 };
+      const span = spec.max - spec.min;
+      return { kind: 'wager', amount: spec.min + (span > 0 ? randInt(span + 1) : 0) };
+    }
+    case 'aceCall':
+      return { kind: 'aceCall', high: randInt(2) === 1 };
   }
-  return { kind: 'discard', cardIndexes };
 }
 
 function randomLegalMove(
@@ -96,7 +120,19 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
   const ctx = (): EngineCtx => ({ now, randInt });
 
   const ante = 1 + randInt(3); // 1..3
-  const variantMixes: VariantId[][] = [['holdem'], ['five-draw'], ['holdem', 'five-draw']];
+  const ALL: VariantId[] = ['holdem', 'five-draw', 'seven-stud', 'guts', 'baseball', 'in-between'];
+  const variantMixes: VariantId[][] = [
+    ['holdem'],
+    ['five-draw'],
+    ['seven-stud'],
+    ['guts'],
+    ['baseball'],
+    ['in-between'],
+    ['holdem', 'five-draw', 'guts'],
+    ['seven-stud', 'baseball', 'in-between'],
+    ALL,
+    ALL,
+  ];
   let state = createGame({
     id: `fuzz${seed}`,
     hostId: 'p0',
@@ -159,6 +195,16 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
   while (state.phase !== 'ended') {
     if (++steps > 30_000) throw new Error(`game did not terminate (seed ${seed})`);
     checkInvariants(state);
+
+    // Small-ante games can grind for thousands of hands without anyone
+    // busting — a real night ends when the host calls it. Ending mid-game is
+    // itself a path worth fuzzing (refunds, carry disbursement, standings).
+    if (handsPlayed >= 400) {
+      const res = applyAction(state, { type: 'endGame', byId: 'p0' }, ctx());
+      if (!res.ok) throw new Error(`host endGame failed: ${res.error.message} (seed ${seed})`);
+      state = res.state;
+      continue; // loop condition exits; final invariants checked below
+    }
 
     if (state.phase === 'hand-over') {
       if (maybeTopUp()) continue;
@@ -231,8 +277,9 @@ function playGame(seed: number, numPlayers: number, botMask: number): number {
 
     if (state.hand.round.kind === 'exchange') {
       const move: VariantMoveInput = useBotBrain
-        ? (decideExchangeForBot(state, acting, randInt) ?? { kind: 'discard', cardIndexes: [] })
-        : randomDiscard(randInt);
+        ? (decideExchangeForBot(state, acting, randInt) ??
+          randomExchangeMove(state, acting, randInt))
+        : randomExchangeMove(state, acting, randInt);
       const res = applyAction(state, { type: 'variantMove', playerId: acting, move }, ctx());
       if (!res.ok) {
         throw new Error(

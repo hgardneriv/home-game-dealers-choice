@@ -11,6 +11,10 @@ function describeEvent(event: GameEvent, names: (id: string) => string): string 
       return `— Hand #${d.handNo}: ${String(d.variantName ?? '')} —`;
     case 'antes-posted':
       return `Everyone antes $${d.amount}`;
+    case 'pot-matched':
+      return `${names(String(d.playerId))} matches the pot ($${d.amount} to the next hand)`;
+    case 'pot-carried':
+      return `$${d.amount} carries to the next pot`;
     case 'cards-drawn':
       return Number(d.count) === 0
         ? `${names(String(d.playerId))} stands pat`
@@ -26,10 +30,44 @@ function describeEvent(event: GameEvent, names: (id: string) => string): string 
       const auto = d.auto ? ' (auto)' : '';
       if (move === 'fold' || move === 'check') return `${names(String(d.playerId))} ${move}s${auto}`;
       if (move === 'call') return `${names(String(d.playerId))} calls $${d.amount}${auto}`;
-      return `${names(String(d.playerId))} ${move}s to $${d.amount}`;
+      if (move === 'bet' || move === 'raise')
+        return `${names(String(d.playerId))} ${move}s to $${d.amount}`;
+      // Variant moves (draw/declare/flip/wager) narrate via their own events.
+      return null;
     }
     case 'street-dealt':
       return `${String(d.street)}: ${(d.cards as string[]).join(' ')}`;
+    case 'stud-street': {
+      const ups = Object.entries((d.upCards as Record<string, string>) ?? {});
+      if (ups.length === 0) return `${String(d.street)} street: down cards dealt`;
+      return `${String(d.street)} street: ${ups.map(([id, c]) => `${names(id)} ${c}`).join(', ')}`;
+    }
+    case 'declared':
+      return `${names(String(d.playerId))} is ${d.choice === 'in' ? 'IN' : 'out'}`;
+    case 'flipped':
+      return `${names(String(d.playerId))} flips ${d.card}`;
+    case 'busted-out':
+      return `${names(String(d.playerId))} can't beat the board — out`;
+    case 'in-between-turn':
+      return `${names(String(d.playerId))} shows ${(d.cards as string[]).join(' ')}`;
+    case 'in-between-ace':
+      return `${names(String(d.playerId))} draws an ace — calling it…`;
+    case 'in-between-result': {
+      const who = names(String(d.playerId));
+      const third = String(d.third);
+      switch (d.outcome) {
+        case 'win':
+          return `${who} hits ${third} — wins $${d.amount}`;
+        case 'lose':
+          return `${who} misses (${third}) — pays $${d.amount}`;
+        case 'post':
+          return `${who} hits the post (${third}) — pays double, $${d.amount}`;
+        default:
+          return `${who} passes`;
+      }
+    }
+    case 'in-between-reshuffle':
+      return 'Deck reshuffled';
     case 'hand-result': {
       const pots = d.pots as { amount: number; winners: string[] }[];
       return pots

@@ -210,6 +210,11 @@ export function Table({ game }: { game: GameApi }) {
                 );
               })}
             </div>
+            {state.carryPot > 0 && (
+              <div className="rounded-full bg-black/45 px-3 py-1 text-xs text-amber-200/90 shadow">
+                ↪ ${state.carryPot} rides on the next hand
+              </div>
+            )}
             <AnimatePresence>
               {hand && hand.potTotal > 0 && !result && (
                 <motion.div

@@ -74,8 +74,10 @@ describe('config normalization', () => {
       .toEqual(['holdem']);
     expect(normalizeConfig({ enabledVariants: ['five-draw'] }).enabledVariants)
       .toEqual(['five-draw']); // implemented since M3
-    expect(normalizeConfig({ enabledVariants: ['guts'] }).enabledVariants)
-      .toEqual(['holdem']); // unimplemented id filtered, fallback applied
+    expect(
+      normalizeConfig({ enabledVariants: ['not-a-game' as unknown as 'holdem'] })
+        .enabledVariants
+    ).toEqual(['holdem']); // unknown id filtered, fallback applied
     expect(
       normalizeConfig({ enabledVariants: 'nope' as unknown as [] }).enabledVariants
     ).toEqual(['holdem']);

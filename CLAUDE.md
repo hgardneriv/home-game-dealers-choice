@@ -4,11 +4,12 @@
 
 Fork of `home-game-poker` (July 2026) converting the single-game Texas Hold'em app
 into ante-based **dealer's choice**: the dealer picks the game each hand from a
-host-enabled list. The approved build plan lives in the session plan file and as a
-claude.ai artifact; milestones: **M1** ante conversion + variant framework (DONE),
-**M2** dealer-pick flow (DONE), **M3** five-card draw (DONE — the choosing UI is
-live since two games exist), then stud/guts/baseball/in-between as parallel
-variant modules. Suite: 337 tests incl. variant-mixing fuzz.
+host-enabled list. ALL SIX GAMES SHIPPED (July 2026): hold'em, five-card draw,
+seven-card stud, three-card guts, baseball (no-peek, wild 3s/9s), in-between —
+each a pure module in `src/engine/variants/` built against the shared plumbing
+(carry pot, communal pot, settle/resolve hooks, turnContinues multi-step turns,
+noPeek redaction). Suite: 455+ tests incl. an all-variant fuzz that plays random
+mixed-game nights and a host-ends-long-games path. Browser-verified per game.
 
 ## Deployment
 
@@ -134,12 +135,8 @@ animations freeze in screenshots — tool environment, not a bug.
 
 1. **Deploy**: new Vercel project + Upstash Redis + SESSION_SECRET; update the
    Deployment section above and README when done.
-2. **Variant fan-out** (parallelizable, one agent per module — the interface is
-   proven by five-draw): 7-stud (faceUp deals per street, maybe highest-board
-   first-to-act override), guts (declare exchange + `settle` hook + carry-pot
-   `GameState` field & fuzz invariant update Σ stacks + pot + carry = Σ buyIn),
-   baseball/no-peek (flip exchange turns; needs wild-card evaluator +
-   five-of-a-kind category), in-between (wager/pass vs pot; `score` unused).
-3. **Mutation hardening pass** over the M1–M3 engine (`npx stryker run`,
+2. **Mutation hardening pass** over the whole engine (`npx stryker run`,
    expect a dip from the refactor; target ~90% kill again).
-4. Play-testing with real friends → bot tuning + UX iterations.
+3. Play-testing with real friends → bot tuning + UX iterations. House-rule
+   toggles parked for later: baseball pay-for-3/extra-card-on-4, draw
+   4-with-an-ace, guts secret simultaneous declares.

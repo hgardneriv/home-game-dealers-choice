@@ -14,13 +14,13 @@ seats.
 
 | Game | Status |
 | --- | --- |
-| Texas Hold'em (ante-based) | ✅ Playable |
 | Dealer picks the game each hand | ✅ Live |
+| Texas Hold'em (ante-based) | ✅ Playable |
 | 5-card draw (discard up to 3) | ✅ Playable |
-| 7-card stud | Planned |
-| 3-card guts | Planned |
-| 7-card no-peek (baseball) | Planned |
-| In-between (acey-deucey) | Planned |
+| 7-card stud (door cards, best board opens) | ✅ Playable |
+| 3-card guts (losers match the pot) | ✅ Playable |
+| Baseball — 7-card no-peek, 3s & 9s wild | ✅ Playable |
+| In-between (ace call, pay double on the post) | ✅ Playable |
 
 When more than one game is enabled, the deal rotates and each dealer picks the
 next game (bots pick too; an absent dealer repeats the last game). With exactly
@@ -35,7 +35,8 @@ one game enabled, hands deal straight in — a classic single-game night.
 - **The deal rotates** one seat per hand, skipping busted/empty seats. New joiners
   are dealt into the very next hand.
 - **Table stakes.** You can never lose more than your stack — including in the
-  future pot-matching games (guts, in-between).
+  pot-matching games (guts, in-between). Matched pots and unfinished in-between
+  pots ride into the next hand, whatever game the next dealer calls.
 - **Top-ups.** Busted players can re-buy on a decaying schedule (host-configurable;
   disabled in quick play).
 

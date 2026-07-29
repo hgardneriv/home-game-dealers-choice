@@ -19,16 +19,19 @@ export function ActionBar({ game }: { game: GameApi }) {
   const [raiseTo, setRaiseTo] = useState<number | null>(null);
   const [showSizing, setShowSizing] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
+  const [wagerAmt, setWagerAmt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Reset the sizing/discard UI when the turn context changes (adjust-during-render).
-  const turnKey = `${hand?.handNo}|${hand?.street}|${hand?.toAct}|${hand?.currentBet}`;
+  // Reset the sizing/discard/wager UI when the turn context changes
+  // (adjust-during-render).
+  const turnKey = `${hand?.handNo}|${hand?.street}|${hand?.toAct}|${hand?.currentBet}|${hand?.potTotal}`;
   const [prevTurnKey, setPrevTurnKey] = useState(turnKey);
   if (prevTurnKey !== turnKey) {
     setPrevTurnKey(turnKey);
     setShowSizing(false);
     setRaiseTo(null);
     setSelected([]);
+    setWagerAmt(null);
     setBusy(false);
   }
 
@@ -165,11 +168,117 @@ export function ActionBar({ game }: { game: GameApi }) {
     );
   }
 
-  // Exchange round: tap cards to discard, then draw (five-card draw).
+  // Exchange rounds: spec-driven UI — each variant declares its legal move
+  // kinds and this bar renders the matching controls.
   if (legal.kind !== 'betting') {
+    const shell =
+      'sticky bottom-0 flex flex-col gap-2 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]';
+    const bigBtn =
+      'flex-1 rounded-xl px-3 py-3 font-semibold text-white disabled:opacity-40 active:scale-95';
+    const submitMove = async (mv: Parameters<typeof game.variantMove>[0]) => {
+      if (busy) return;
+      setBusy(true);
+      const error = await game.variantMove(mv);
+      if (error) toast(error);
+      setBusy(false);
+    };
+
+    const declareSpec = legal.moves.find((mv) => mv.kind === 'declare');
+    if (declareSpec) {
+      return (
+        <div className={shell}>
+          <span className="text-center text-sm font-semibold text-amber-300">
+            🂠 Are you in? Losers match the pot.
+          </span>
+          <div className="flex gap-2">
+            {leave}
+            <button className={`${bigBtn} bg-red-700`} disabled={busy}
+              onClick={() => submitMove({ kind: 'declare', choice: 'out' })}>
+              I&apos;m out
+            </button>
+            <button className={`${bigBtn} bg-emerald-700`} disabled={busy}
+              onClick={() => submitMove({ kind: 'declare', choice: 'in' })}>
+              I&apos;m in
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const flipSpec = legal.moves.find((mv) => mv.kind === 'flip');
+    if (flipSpec) {
+      return (
+        <div className={shell}>
+          <span className="text-center text-sm font-semibold text-amber-300">
+            🂠 Flip until you beat the table
+          </span>
+          <div className="flex gap-2">
+            {leave}
+            <button className={`${bigBtn} bg-emerald-700`} disabled={busy}
+              onClick={() => submitMove({ kind: 'flip' })}>
+              Flip a card
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const aceSpec = legal.moves.find((mv) => mv.kind === 'aceCall');
+    if (aceSpec) {
+      return (
+        <div className={shell}>
+          <span className="text-center text-sm font-semibold text-amber-300">
+            🂡 An ace! Call it high or low
+          </span>
+          <div className="flex gap-2">
+            {leave}
+            <button className={`${bigBtn} bg-zinc-600`} disabled={busy}
+              onClick={() => submitMove({ kind: 'aceCall', high: false })}>
+              Low
+            </button>
+            <button className={`${bigBtn} bg-emerald-700`} disabled={busy}
+              onClick={() => submitMove({ kind: 'aceCall', high: true })}>
+              High
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const wagerSpec = legal.moves.find((mv) => mv.kind === 'wager');
+    if (wagerSpec && wagerSpec.kind === 'wager') {
+      const amt = Math.min(wagerAmt ?? wagerSpec.min, wagerSpec.max);
+      return (
+        <div className={shell}>
+          <span className="text-center text-sm font-semibold text-amber-300">
+            💰 Bet against the pot — hit the post and you pay double
+          </span>
+          {wagerSpec.max > 0 && (
+            <div className="flex items-center gap-2">
+              <input type="range" className="flex-1 accent-amber-500"
+                min={wagerSpec.min} max={wagerSpec.max} value={amt}
+                onChange={(e) => setWagerAmt(Number(e.target.value))} />
+              <span className="w-14 text-right font-bold text-amber-400">${amt}</span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            {leave}
+            <button className={`${bigBtn} bg-zinc-600`} disabled={busy}
+              onClick={() => submitMove({ kind: 'wager', amount: 0 })}>
+              Pass
+            </button>
+            <button className={`${bigBtn} bg-emerald-700`} disabled={busy || amt <= 0}
+              onClick={() => submitMove({ kind: 'wager', amount: amt })}>
+              Bet ${amt}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     const spec = legal.moves.find((mv) => mv.kind === 'discard');
     const myCards = hand.myCards ?? [];
-    const max = spec?.max ?? 0;
+    const max = spec?.kind === 'discard' ? spec.max : 0;
     const toggle = (i: number) =>
       setSelected((prev) =>
         prev.includes(i) ? prev.filter((x) => x !== i) : prev.length < max ? [...prev, i] : prev
