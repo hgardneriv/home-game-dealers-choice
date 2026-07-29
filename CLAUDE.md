@@ -11,13 +11,19 @@ each a pure module in `src/engine/variants/` built against the shared plumbing
 noPeek redaction). Suite: 455+ tests incl. an all-variant fuzz that plays random
 mixed-game nights and a host-ends-long-games path. Browser-verified per game.
 
-## Deployment
+## Deployment (live)
 
-- **Not deployed yet.** The parent repo's Vercel project belongs to the old app.
-  After M2: create a new Vercel project + Upstash Redis resource + fresh
-  `SESSION_SECRET`, then `vercel deploy --prod` (deploys are CLI-based, never
-  git-triggered). Env names: `KV_REST_API_URL` / `KV_REST_API_TOKEN` (Marketplace
-  naming — `src/server/kv.ts` accepts both those and `UPSTASH_REDIS_REST_*`).
+- **Production:** https://home-game-dealers-choice.vercel.app — Vercel project
+  `home-game-dealers-choice`, team `hgardnerivs-projects`; deploy with
+  `vercel deploy --prod` (CLI-based, never git-triggered; run tests first).
+- Env (values in Vercel, never the repo): `SESSION_SECRET` (fresh per project),
+  `KV_REST_API_URL` / `KV_REST_API_TOKEN`. ⚠️ Values must be UNQUOTED — a
+  quoted URL pasted from an env file produces "invalid URL" 500s at runtime.
+- **Redis is SHARED with the old `home-game-poker` app** (same Upstash
+  `home-game-poker-redis` resource, free plan). Fine for game nights; if
+  command limits bite, provision a dedicated Marketplace resource for this
+  project and swap the two env vars. `src/server/kv.ts` accepts both
+  `KV_REST_API_*` and `UPSTASH_REDIS_REST_*` names.
 - Local dev without Redis env uses an in-memory KV automatically (single-process).
 
 ## Architecture (decisions deliberate; rationale inline in code)

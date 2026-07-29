@@ -2,6 +2,8 @@
 
 Poker night the way home games actually work: **the dealer calls the game.**
 
+**Live:** https://home-game-dealers-choice.vercel.app
+
 A mobile-first multiplayer poker table with a hidden automated dealer, forked from
 [home-game-poker](https://github.com/hgardneriv/home-game-poker). No accounts: the
 host creates a table, shares the link (native share sheet on phones), and approves
@@ -83,7 +85,8 @@ Required env in production: `SESSION_SECRET`, plus `KV_REST_API_URL` /
 
 ## Deploy
 
-Not yet deployed — a new Vercel project + Redis resource is the next step. Then:
+Deployed on Vercel (project `home-game-dealers-choice`, team `hgardnerivs-projects`);
+deploys are CLI-based, never git-triggered:
 
 ```bash
 vercel deploy --prod
