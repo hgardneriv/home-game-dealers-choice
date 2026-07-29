@@ -16,6 +16,8 @@ import type { TableConfig } from './types';
 export function topUpAmount(config: TableConfig, topUpsUsed: number): number {
   const max = config.topUps ?? 0; // legacy persisted games: feature off
   const used = topUpsUsed ?? 0;
+  // `max <= 0` is redundant with `used >= max` at max === 0 (used is never
+  // negative); kept for readability — its Stryker mutants are equivalent.
   if (max <= 0 || used >= max) return 0;
   const first = Math.round(0.6 * config.startingStack);
   const decay = 1 - (config.topUpDecayPct ?? 50) / 100;
