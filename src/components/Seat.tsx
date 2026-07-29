@@ -74,9 +74,10 @@ export function Seat({
     >
       {/* Cards peeking above the plate. After folding, you (and only you)
           still see your own cards greyed out — to watch what might have been.
-          Your own cards sit fully clear of the plate; opponents' tuck behind. */}
+          Face-up cards (yours, or anyone's at showdown) sit fully clear of
+          the plate so the bottom index isn't cut off; face-down backs tuck. */}
       <div
-        className={`z-0 flex gap-0.5 ${isYou ? 'mb-1' : '-mb-2'} ${
+        className={`z-0 flex gap-0.5 ${showCards ? 'mb-1' : '-mb-2'} ${
           folded ? 'opacity-70 grayscale' : ''
         }`}
       >
