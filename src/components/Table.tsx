@@ -4,7 +4,26 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { GameApi } from '@/hooks/useGame';
 import { useOrientation } from '@/hooks/useOrientation';
 import { Seat } from './Seat';
-import { PlayingCard } from './PlayingCard';
+import { PlayingCard, SUIT_PATH } from './PlayingCard';
+
+/**
+ * Felt texture: a sparse diagonal tile of dark suit motifs baked into a
+ * data-URI SVG. Static backgrounds rasterize once — deliberately no
+ * filters/blurs anywhere on the table (they wedge older iOS GPUs).
+ */
+const FELT_TILE = `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'>` +
+    `<g fill='#000000' fill-opacity='0.06'>` +
+    `<path transform='translate(16,12)' d='${SUIT_PATH.s}'/>` +
+    `<path transform='translate(76,72)' d='${SUIT_PATH.c}'/>` +
+    `</g></svg>`
+)}")`;
+
+const FELT_LAYERS = [
+  'radial-gradient(ellipse at 50% 35%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 60%)',
+  FELT_TILE,
+  'radial-gradient(ellipse at 50% 38%, #1f8354 0%, #146240 45%, #093d25 100%)',
+].join(', ');
 
 interface Point {
   x: number;
@@ -84,15 +103,45 @@ export function Table({ game }: { game: GameApi }) {
       className="absolute inset-2 border-[10px] border-amber-950/90 shadow-[inset_0_0_60px_rgba(0,0,0,0.55),0_10px_30px_rgba(0,0,0,0.5)]"
       style={{
         borderRadius: orientation === 'landscape' ? '45% / 42%' : '42% / 46%',
-        background:
-          'radial-gradient(ellipse at 50% 38%, #1d7a4f 0%, #14603d 45%, #0b4229 100%)',
+        backgroundImage: FELT_LAYERS,
+        backgroundSize: 'auto, 120px 120px, auto',
+        backgroundRepeat: 'no-repeat, repeat, no-repeat',
       }}
     >
-      {/* Inner rail line */}
+      {/* Gold pinstripe hugging the wooden rail */}
+      <div
+        className="pointer-events-none absolute inset-1 border border-amber-300/25"
+        style={{ borderRadius: 'inherit' }}
+      />
+      {/* Inner rail (betting) line */}
       <div
         className="pointer-events-none absolute inset-4 border border-white/10"
         style={{ borderRadius: 'inherit' }}
       />
+
+      {/* Felt logo — an embroidered-style gold badge */}
+      <div className="pointer-events-none absolute left-1/2 top-[62%] z-0 -translate-x-1/2 -translate-y-1/2 select-none text-center">
+        <div className="rounded-[50%] border border-amber-200/20 px-8 py-3 sm:px-10 sm:py-4">
+          <div
+            className="text-2xl leading-none tracking-[0.5em] text-black/60 sm:text-[28px]"
+            style={{ paddingLeft: '0.5em' }}
+          >
+            ♠&nbsp;♥&nbsp;♦&nbsp;♣
+          </div>
+          <div
+            className="mt-0.5 bg-gradient-to-b from-amber-50/95 via-amber-300/85 to-amber-500/70 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
+            style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
+          >
+            HOME GAME
+          </div>
+          <div
+            className="mt-0.5 text-[10px] tracking-[0.4em] text-white/50 sm:text-xs"
+            style={{ paddingLeft: '0.4em' }}
+          >
+            TEXAS HOLD&apos;EM
+          </div>
+        </div>
+      </div>
 
       {/* Board + pot */}
       <div
@@ -117,7 +166,7 @@ export function Table({ game }: { game: GameApi }) {
                 ) : (
                   <div
                     key={`slot${i}`}
-                    className="h-[58px] w-[40px] rounded-[4px] border border-white/15 bg-black/10"
+                    className="w-12 aspect-[20/29] rounded-[4px] border border-white/15 bg-black/10 sm:w-14"
                   />
                 );
               })}

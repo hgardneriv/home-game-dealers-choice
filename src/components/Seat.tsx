@@ -68,9 +68,10 @@ export function Seat({
       className="flex w-max min-w-24 max-w-36 flex-col items-center sm:max-w-48"
     >
       {/* Cards peeking above the plate. After folding, you (and only you)
-          still see your own cards greyed out — to watch what might have been. */}
+          still see your own cards greyed out — to watch what might have been.
+          Your own cards sit fully clear of the plate; opponents' tuck behind. */}
       <div
-        className={`z-0 flex gap-0.5 ${isYou ? '-mb-3' : '-mb-2'} ${
+        className={`z-0 flex gap-0.5 ${isYou ? 'mb-1' : '-mb-2'} ${
           folded ? 'opacity-70 grayscale' : ''
         }`}
       >

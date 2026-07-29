@@ -7,7 +7,7 @@ import { motion } from 'motion/react';
  * Face-up cards flip in when they first appear.
  */
 
-const SUIT_PATH: Record<string, string> = {
+export const SUIT_PATH: Record<string, string> = {
   // 24x24 suit glyphs, centered.
   s: 'M12 2C9.5 6.5 4 9.5 4 13.5c0 2.5 2 4.2 4.2 4.2 1.1 0 2.1-.4 2.8-1.1-.3 1.9-1.1 3.4-2.5 4.4v1h7v-1c-1.4-1-2.2-2.5-2.5-4.4.7.7 1.7 1.1 2.8 1.1 2.2 0 4.2-1.7 4.2-4.2C20 9.5 14.5 6.5 12 2z',
   h: 'M12 21C6 15.5 2 12 2 8.2 2 5.3 4.2 3 7 3c1.9 0 3.8 1 5 2.7C13.2 4 15.1 3 17 3c2.8 0 5 2.3 5 5.2 0 3.8-4 7.3-10 12.8z',
@@ -15,10 +15,14 @@ const SUIT_PATH: Record<string, string> = {
   c: 'M12 2a4.4 4.4 0 0 0-4.4 4.4c0 .6.1 1.2.4 1.7A4.4 4.4 0 1 0 10 15.7c-.2 2-1 3.5-2.4 4.5v1h8.8v-1c-1.4-1-2.2-2.5-2.4-4.5a4.4 4.4 0 1 0 2-7.6c.3-.5.4-1.1.4-1.7A4.4 4.4 0 0 0 12 2z',
 };
 
-const SIZES = {
-  sm: { w: 28, h: 40 },
-  md: { w: 40, h: 58 },
-  lg: { w: 52, h: 74 },
+/**
+ * Responsive widths (height follows the 20:29 card ratio) — noticeably
+ * larger on desktop, a step up from the old fixed sizes on mobile too.
+ */
+const SIZE_CLASSES = {
+  sm: 'w-8 sm:w-10',
+  md: 'w-12 sm:w-14',
+  lg: 'w-14 sm:w-[72px]',
 };
 
 export function PlayingCard({
@@ -32,23 +36,49 @@ export function PlayingCard({
   /** Animate in (deal/flip) when the card first mounts. */
   dealt?: boolean;
 }) {
-  const { w, h } = SIZES[size];
+  const sizing = `${SIZE_CLASSES[size]} aspect-[20/29]`;
 
   if (!card) {
     return (
-      <div
-        style={{ width: w, height: h }}
-        className="rounded-[4px] border border-white/25 shadow-md"
-        aria-label="face-down card"
-      >
-        <div
-          className="h-full w-full rounded-[3px]"
-          style={{
-            background:
-              'repeating-linear-gradient(45deg, #1e3a8a 0 3px, #172c69 3px 6px)',
-            boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.18)',
-          }}
-        />
+      <div className={sizing} aria-label="face-down card">
+        <svg
+          viewBox="0 0 40 58"
+          width="100%"
+          height="100%"
+          className="block rounded-[4px] shadow-md"
+        >
+          <defs>
+            <linearGradient id="hgCardBack" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#1e3a8a" />
+              <stop offset="1" stopColor="#142457" />
+            </linearGradient>
+            <pattern
+              id="hgLattice"
+              width="6"
+              height="6"
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <path d="M0 0H6" stroke="rgba(255,255,255,0.13)" strokeWidth="1" />
+            </pattern>
+          </defs>
+          <rect width="40" height="58" rx="4" fill="url(#hgCardBack)" stroke="#0e1c45" />
+          <rect
+            x="2.5"
+            y="2.5"
+            width="35"
+            height="53"
+            rx="2.5"
+            fill="url(#hgLattice)"
+            stroke="rgba(251,191,36,0.45)"
+            strokeWidth="0.8"
+          />
+          {/* Center medallion echoes the felt's gold-on-dark styling. */}
+          <circle cx="20" cy="29" r="8.5" fill="#142457" stroke="rgba(251,191,36,0.5)" strokeWidth="0.8" />
+          <g transform="translate(14.5, 23.2) scale(0.46)">
+            <path d={SUIT_PATH.s} fill="rgba(251,191,36,0.8)" />
+          </g>
+        </svg>
       </div>
     );
   }
@@ -56,39 +86,72 @@ export function PlayingCard({
   const rank = card[0] === 'T' ? '10' : card[0];
   const suit = card[1];
   const red = suit === 'h' || suit === 'd';
-  const color = red ? '#dc2626' : '#111827';
+  const color = red ? '#d92638' : '#101828';
+  const indexSize = rank === '10' ? 9.5 : 11;
 
   return (
     <motion.div
       initial={dealt ? { scaleX: 0.1, y: -10, opacity: 0 } : false}
       animate={{ scaleX: 1, y: 0, opacity: 1 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      style={{ width: w, height: h }}
+      className={sizing}
       aria-label={card}
     >
       <svg
         viewBox="0 0 40 58"
-        width={w}
-        height={h}
-        className="rounded-[4px] shadow-md"
-        style={{ display: 'block' }}
+        width="100%"
+        height="100%"
+        className="block rounded-[4px] shadow-lg"
       >
-        <rect x="0" y="0" width="40" height="58" rx="4" fill="#ffffff" stroke="#d4d4d8" />
+        <defs>
+          <linearGradient id="hgCardFace" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="1" stopColor="#f2eee4" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="40" height="58" rx="4" fill="url(#hgCardFace)" stroke="#cbc5b7" />
+        <rect x="1.6" y="1.6" width="36.8" height="54.8" rx="3" fill="none" stroke="rgba(0,0,0,0.06)" />
+
+        {/* Oversized ghost pip — a subtle watermark like the felt's. */}
+        <g transform="translate(7.4, 16.4) scale(1.05)">
+          <path d={SUIT_PATH[suit]} fill={color} opacity="0.08" />
+        </g>
+
+        {/* Corner index, top-left… */}
         <text
-          x="5"
-          y="15"
-          fontSize={rank === '10' ? 11 : 13}
+          x="4"
+          y="12.5"
+          fontSize={indexSize}
           fontWeight="800"
           fontFamily="system-ui, sans-serif"
           fill={color}
         >
           {rank}
         </text>
-        <g transform="translate(3.5, 18) scale(0.5)">
+        <g transform="translate(4, 14.5) scale(0.34)">
           <path d={SUIT_PATH[suit]} fill={color} />
         </g>
-        <g transform="translate(17, 26) scale(0.85)">
-          <path d={SUIT_PATH[suit]} fill={color} opacity="0.92" />
+
+        {/* …and mirrored bottom-right, like a real deck. */}
+        <g transform="rotate(180, 20, 29)">
+          <text
+            x="4"
+            y="12.5"
+            fontSize={indexSize}
+            fontWeight="800"
+            fontFamily="system-ui, sans-serif"
+            fill={color}
+          >
+            {rank}
+          </text>
+          <g transform="translate(4, 14.5) scale(0.34)">
+            <path d={SUIT_PATH[suit]} fill={color} />
+          </g>
+        </g>
+
+        {/* Main center pip. */}
+        <g transform="translate(11.4, 20.4) scale(0.72)">
+          <path d={SUIT_PATH[suit]} fill={color} opacity="0.95" />
         </g>
       </svg>
     </motion.div>
