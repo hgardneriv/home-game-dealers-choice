@@ -113,9 +113,15 @@ export function Seat({
                 size={isYou ? 'md' : 'sm'}
                 dealt
                 wild={isWildCard(card)}
-                // Shade your own table-hidden cards (stud) so you always know
-                // which of your cards the others can't see.
-                facedown={isYou && hand?.myFaceUp ? hand.myFaceUp[i] === false : false}
+                // Shade your own table-hidden cards so you always know which
+                // of your cards the others can't see — but only when the hand
+                // MIXES up and down cards (stud). In all-down games (hold'em,
+                // draw, guts) every card is hidden and the tag is just noise.
+                facedown={
+                  isYou &&
+                  !!hand?.myFaceUp?.includes(true) &&
+                  hand?.myFaceUp?.[i] === false
+                }
               />
             ))}
             {/* No-peek: your flipped cards plus backs for the rest. */}
