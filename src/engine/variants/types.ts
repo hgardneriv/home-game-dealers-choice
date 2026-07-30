@@ -62,6 +62,21 @@ export interface GameVariant {
   noPeek?: boolean;
 
   /**
+   * Wild ranks (rank chars, e.g. ['3', '9'] for baseball). Purely
+   * presentational — the client badges matching cards "WILD"; scoring
+   * already lives in the variant's evaluator.
+   */
+  wildRanks?: string[];
+
+  /**
+   * Per-turn result reveal (in-between): after the variant emits `eventType`,
+   * clients display the outcome for `ms` and the engine holds bots off their
+   * next exchange turn until the window has passed, so every player sees the
+   * card that was played.
+   */
+  resultReveal?: { eventType: string; ms: number };
+
+  /**
    * Who opens a fresh round; default is left of the button (inHand[0]).
    * Stud overrides with "highest board showing".
    */

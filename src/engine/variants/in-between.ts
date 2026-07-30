@@ -126,6 +126,9 @@ export const inBetween: GameVariant = {
   minPlayers: 2,
   fitsPlayers: (count) => count >= 2 && count <= 6,
   potStyle: 'communal',
+  // Every turn's third card stays on display this long so the whole table
+  // sees what was played before the next turn's cards replace it.
+  resultReveal: { eventType: 'in-between-result', ms: 4000 },
 
   deal(v): PhasePlan {
     const hand = v.hand;

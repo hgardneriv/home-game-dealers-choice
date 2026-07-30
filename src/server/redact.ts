@@ -73,6 +73,8 @@ export interface ClientHand {
   actionDeadline: number | null;
   /** Your own cards, in dealt order. */
   myCards: Card[] | null;
+  /** Parallel to myCards: which of YOUR cards the table can see (stud up-cards). */
+  myFaceUp: boolean[] | null;
   /** Everyone's face-up cards (stud up-cards, no-peek flips). Empty arrays omitted. */
   publicCards: Record<string, Card[]>;
   /** How many cards each dealt-in player holds — for rendering card backs. */
@@ -131,6 +133,13 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
           ? getVariant(h.variant).noPeek
             ? h.playerCards[playerId].cards.filter((_, i) => h.playerCards[playerId].faceUp[i])
             : [...h.playerCards[playerId].cards]
+          : null,
+      // No-peek: myCards is already only the flipped (face-up) cards.
+      myFaceUp:
+        playerId && h.playerCards[playerId]
+          ? getVariant(h.variant).noPeek
+            ? h.playerCards[playerId].faceUp.filter(Boolean)
+            : [...h.playerCards[playerId].faceUp]
           : null,
       publicCards,
       cardCounts,

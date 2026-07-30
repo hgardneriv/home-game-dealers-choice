@@ -824,7 +824,18 @@ function stampTurn(m: Mutable): void {
   const player = state.players[round.toAct!];
   round.timeBankArmed = false;
   if (player.isBot) {
-    round.botActAt = ctx.now + BOT_DELAY_BASE_MS + ctx.randInt(BOT_DELAY_JITTER_MS);
+    let wait = BOT_DELAY_BASE_MS + ctx.randInt(BOT_DELAY_JITTER_MS);
+    // Result-reveal pause (in-between): hold the bot until the table has had
+    // its look at the previous turn's card, then let it "think" as usual.
+    const reveal = getVariant(hand.variant).resultReveal;
+    if (reveal && round.kind === 'exchange') {
+      let lastAt = -Infinity;
+      for (const e of state.events) {
+        if (e.type === reveal.eventType) lastAt = e.at;
+      }
+      wait = Math.max(wait, lastAt + reveal.ms - ctx.now + BOT_DELAY_BASE_MS);
+    }
+    round.botActAt = ctx.now + wait;
     round.actionDeadline = round.botActAt + 10_000; // fallback if bot logic ever fails
   } else if (player.status === 'away') {
     round.botActAt = null;

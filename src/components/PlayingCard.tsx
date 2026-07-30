@@ -29,12 +29,18 @@ export function PlayingCard({
   card,
   size = 'md',
   dealt = false,
+  wild = false,
+  facedown = false,
 }: {
   /** e.g. 'As'; undefined renders a face-down card. */
   card?: string;
   size?: 'sm' | 'md' | 'lg';
   /** Animate in (deal/flip) when the card first mounts. */
   dealt?: boolean;
+  /** Gold WILD band (baseball 3s/9s). */
+  wild?: boolean;
+  /** Your own hole card others can't see (stud) — shaded card-back blue. */
+  facedown?: boolean;
 }) {
   const sizing = `${SIZE_CLASSES[size]} aspect-[20/29]`;
 
@@ -153,6 +159,45 @@ export function PlayingCard({
         <g transform="translate(11.4, 20.4) scale(0.72)">
           <path d={SUIT_PATH[suit]} fill={color} opacity="0.95" />
         </g>
+
+        {/* Face-down (to the table) shading: card-back blue wash + tag. */}
+        {facedown && (
+          <g>
+            <rect width="40" height="58" rx="4" fill="#1e3a8a" opacity="0.32" />
+            <rect x="7" y="45" width="26" height="8" rx="4" fill="#142457" opacity="0.9" />
+            <text
+              x="20"
+              y="51"
+              fontSize="5.5"
+              fontWeight="700"
+              fontFamily="system-ui, sans-serif"
+              textAnchor="middle"
+              fill="#bfdbfe"
+              letterSpacing="0.5"
+            >
+              DOWN
+            </text>
+          </g>
+        )}
+
+        {/* Wild marker: gold band across the middle. */}
+        {wild && (
+          <g>
+            <rect x="3" y="24" width="34" height="10" rx="2" fill="#b45309" stroke="#78350f" strokeWidth="0.7" />
+            <text
+              x="20"
+              y="31.5"
+              fontSize="7"
+              fontWeight="800"
+              fontFamily="system-ui, sans-serif"
+              textAnchor="middle"
+              fill="#fef3c7"
+              letterSpacing="1.2"
+            >
+              WILD
+            </text>
+          </g>
+        )}
       </svg>
     </motion.div>
   );

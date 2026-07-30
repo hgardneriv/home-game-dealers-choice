@@ -109,6 +109,7 @@ export const baseball: GameVariant = {
   minPlayers: 2,
   fitsPlayers: (count) => count >= 2 && count <= 6,
   noPeek: true,
+  wildRanks: ['3', '9'],
 
   deal(v): PhasePlan {
     for (const id of v.hand.inHand) {

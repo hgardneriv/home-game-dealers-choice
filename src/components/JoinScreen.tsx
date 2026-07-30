@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import type { GameApi } from '@/hooks/useGame';
+import { useRememberedName } from '@/hooks/useRememberedName';
 
 export function JoinScreen({ game }: { game: GameApi }) {
   const { state } = game;
-  const [name, setName] = useState('');
+  const [name, setName] = useRememberedName();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

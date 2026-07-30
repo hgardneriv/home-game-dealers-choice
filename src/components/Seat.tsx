@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import type { GameApi } from '@/hooks/useGame';
+import { getVariant } from '@/engine/variants/registry';
+import { handLabel } from '@/engine/hand-label';
 import { PlayingCard } from './PlayingCard';
 
 export function Seat({
@@ -60,6 +62,18 @@ export function Seat({
   const publicCards = hand?.publicCards[player.id] ?? [];
   const hiddenCount = Math.max(0, cardCount - publicCards.length);
 
+  const variant = hand ? getVariant(hand.variant) : null;
+  const isWildCard = (card: string) => variant?.wildRanks?.includes(card[0]) ?? false;
+
+  // Casino-machine courtesy: name any made hand as it develops. Everyone sees
+  // a label built from this seat's FACE-UP cards; you additionally see one
+  // from everything you know (your own view only — never serialized).
+  const liveLabel = (() => {
+    if (!hand || state.phase !== 'playing' || !inHand || folded) return null;
+    const cards = isYou ? (hand.myCards ?? []) : publicCards;
+    return handLabel(hand.variant, cards, hand.board);
+  })();
+
   return (
     <motion.div
       // Your own folded seat stays a bit more legible so you can read your cards.
@@ -83,7 +97,7 @@ export function Seat({
         {inHand && !folded && !showCards && (
           <>
             {publicCards.map((card) => (
-              <PlayingCard key={card} card={card} size="sm" dealt />
+              <PlayingCard key={card} card={card} size="sm" dealt wild={isWildCard(card)} />
             ))}
             {Array.from({ length: hiddenCount }).map((_, i) => (
               <PlayingCard key={`back-${i}`} size="sm" />
@@ -92,8 +106,17 @@ export function Seat({
         )}
         {inHand && showCards && (!folded || isYou) && (
           <>
-            {showCards.map((card) => (
-              <PlayingCard key={card} card={card} size={isYou ? 'md' : 'sm'} dealt />
+            {showCards.map((card, i) => (
+              <PlayingCard
+                key={card}
+                card={card}
+                size={isYou ? 'md' : 'sm'}
+                dealt
+                wild={isWildCard(card)}
+                // Shade your own table-hidden cards (stud) so you always know
+                // which of your cards the others can't see.
+                facedown={isYou && hand?.myFaceUp ? hand.myFaceUp[i] === false : false}
+              />
             ))}
             {/* No-peek: your flipped cards plus backs for the rest. */}
             {isYou &&
@@ -150,6 +173,14 @@ export function Seat({
           </div>
         )}
       </div>
+
+      {/* Live made-hand label (phase 'playing' only — never fights the
+          showdown description below). */}
+      {liveLabel && (
+        <div className="z-10 mt-0.5 whitespace-nowrap rounded bg-black/60 px-1.5 text-[10px] font-medium text-emerald-300">
+          {liveLabel}
+        </div>
+      )}
 
       {/* Showdown hand description */}
       {description && isWinner && (

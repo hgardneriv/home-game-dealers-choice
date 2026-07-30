@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { GameApi } from '@/hooks/useGame';
 import { useOrientation } from '@/hooks/useOrientation';
@@ -64,6 +65,26 @@ function lerp(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
+function EmptySlot() {
+  return (
+    <div
+      className="w-12 aspect-[20/29] rounded-[4px] border border-amber-400/40 bg-[#0c2318]/90 sm:w-14"
+      style={{
+        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 0 3px rgba(216,180,92,0.22)',
+      }}
+    />
+  );
+}
+
+/** In-between turn result — the shape 'in-between-result' events carry. */
+interface InBetweenResult {
+  playerId: string;
+  cards: [string, string];
+  third: string;
+  outcome: 'win' | 'lose' | 'post' | 'pass';
+  amount: number;
+}
+
 function BetChip({ amount, at }: { amount: number; at: Point }) {
   return (
     <motion.div
@@ -95,6 +116,27 @@ export function Table({ game }: { game: GameApi }) {
   // While the dealer picks, the marquee flips back to the brand.
   const variant = hand && !choosing ? getVariant(hand.variant) : null;
   const result = hand?.result ?? null;
+
+  // Per-turn result reveal (in-between): the freshest result event still
+  // inside its display window keeps the played card on the table for all.
+  const revealCfg = variant?.resultReveal ?? null;
+  const revealEvent = (() => {
+    if (!revealCfg) return null;
+    let latest = null;
+    for (const e of state.events) if (e.type === revealCfg.eventType) latest = e;
+    if (!latest) return null;
+    return game.serverNow() - latest.at < revealCfg.ms ? latest : null;
+  })();
+  const reveal = revealEvent ? (revealEvent.data as InBetweenResult) : null;
+
+  // Tick while a reveal is showing so it dismisses on schedule.
+  const [, forceTick] = useState(0);
+  const revealSeq = revealEvent?.seq ?? null;
+  useEffect(() => {
+    if (revealSeq === null) return;
+    const t = setInterval(() => forceTick((n) => n + 1), 250);
+    return () => clearInterval(t);
+  }, [revealSeq]);
   const discSeat = choosing ? choosing.buttonSeat : hand?.buttonSeat ?? null;
   const winnersLine = (() => {
     if (!result || !hand) return null;
@@ -194,22 +236,70 @@ export function Table({ game }: { game: GameApi }) {
         ) : (
           <>
             <div className="flex gap-1.5">
-              {(variant === null || variant.layoutHint === 'board') && [0, 1, 2, 3, 4].map((i) => {
-                const card = hand?.board[i];
-                return card ? (
-                  <PlayingCard key={card} card={card} size="md" dealt />
-                ) : (
-                  <div
-                    key={`slot${i}`}
-                    className="w-12 aspect-[20/29] rounded-[4px] border border-amber-400/40 bg-[#0c2318]/90 sm:w-14"
-                    style={{
-                      boxShadow:
-                        'inset 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 0 3px rgba(216,180,92,0.22)',
-                    }}
-                  />
-                );
-              })}
+              {variant?.id === 'in-between'
+                ? // Three slots dealt outside-in: up-cards in 1 and 3, the
+                  // played card lands "in between" and stays for the reveal.
+                  (reveal
+                    ? [reveal.cards[0], reveal.third, reveal.cards[1]]
+                    : [hand?.board[0], undefined, hand?.board[1]]
+                  ).map((card, i) =>
+                    card ? (
+                      i === 1 ? (
+                        <div
+                          key={`mid-${card}`}
+                          className={`rounded-[5px] ring-2 ${
+                            reveal?.outcome === 'win'
+                              ? 'ring-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.7)]'
+                              : reveal?.outcome === 'pass'
+                                ? 'ring-amber-300 shadow-[0_0_14px_rgba(252,211,77,0.55)]'
+                                : 'ring-red-400 shadow-[0_0_14px_rgba(248,113,113,0.7)]'
+                          }`}
+                        >
+                          <PlayingCard card={card} size="md" dealt />
+                        </div>
+                      ) : (
+                        <PlayingCard key={card} card={card} size="md" dealt />
+                      )
+                    ) : (
+                      <EmptySlot key={`slot${i}`} />
+                    )
+                  )
+                : (variant === null || variant.layoutHint === 'board') &&
+                  [0, 1, 2, 3, 4].map((i) => {
+                    const card = hand?.board[i];
+                    return card ? (
+                      <PlayingCard key={card} card={card} size="md" dealt />
+                    ) : (
+                      <EmptySlot key={`slot${i}`} />
+                    );
+                  })}
             </div>
+            {/* In-between turn outcome — announced to the whole table. */}
+            <AnimatePresence>
+              {reveal && (
+                <motion.div
+                  key={`ib-${revealSeq}`}
+                  initial={{ opacity: 0, y: 6, scale: 0.92 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="rounded-full bg-black/70 px-3 py-1 text-sm font-semibold shadow"
+                >
+                  {(() => {
+                    const name = state.players[reveal.playerId]?.name ?? 'Player';
+                    switch (reveal.outcome) {
+                      case 'win':
+                        return <span className="text-emerald-300">🎉 {name} wins ${reveal.amount}!</span>;
+                      case 'lose':
+                        return <span className="text-red-300">💸 {name} loses ${reveal.amount}</span>;
+                      case 'post':
+                        return <span className="text-red-300">🔥 {name} pays double — ${reveal.amount}!</span>;
+                      default:
+                        return <span className="text-white/80">{name} passes</span>;
+                    }
+                  })()}
+                </motion.div>
+              )}
+            </AnimatePresence>
             {state.carryPot > 0 && (
               <div className="rounded-full bg-black/45 px-3 py-1 text-xs text-amber-200/90 shadow">
                 ↪ ${state.carryPot} rides on the next hand
@@ -257,6 +347,28 @@ export function Table({ game }: { game: GameApi }) {
                 ${result.pots.reduce((a, p) => a + p.amount, 0)}
               </span>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* DOUBLE BURN — hitting the post costs double, and everyone hears about it */}
+      <AnimatePresence>
+        {reveal?.outcome === 'post' && (
+          <motion.div
+            key={`burn-${revealSeq}`}
+            initial={{ x: '-50%', scale: 0.3, opacity: 0, rotate: -8 }}
+            animate={{ x: '-50%', scale: 1, opacity: 1, rotate: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 13 }}
+            className="pointer-events-none absolute left-1/2 z-30 whitespace-nowrap text-3xl font-black tracking-wider sm:text-5xl"
+            style={{ top: '18%' }}
+          >
+            <span
+              className="bg-gradient-to-b from-amber-300 via-orange-500 to-red-600 bg-clip-text text-transparent"
+              style={{ textShadow: '0 3px 10px rgba(0,0,0,0.55)' }}
+            >
+              💥 DOUBLE BURN!!!
+            </span>
           </motion.div>
         )}
       </AnimatePresence>

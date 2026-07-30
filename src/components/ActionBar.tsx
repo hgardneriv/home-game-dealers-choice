@@ -19,10 +19,9 @@ export function ActionBar({ game }: { game: GameApi }) {
   const [raiseTo, setRaiseTo] = useState<number | null>(null);
   const [showSizing, setShowSizing] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
-  const [wagerAmt, setWagerAmt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Reset the sizing/discard/wager UI when the turn context changes
+  // Reset the sizing/discard UI when the turn context changes
   // (adjust-during-render).
   const turnKey = `${hand?.handNo}|${hand?.street}|${hand?.toAct}|${hand?.currentBet}|${hand?.potTotal}`;
   const [prevTurnKey, setPrevTurnKey] = useState(turnKey);
@@ -31,19 +30,29 @@ export function ActionBar({ game }: { game: GameApi }) {
     setShowSizing(false);
     setRaiseTo(null);
     setSelected([]);
-    setWagerAmt(null);
     setBusy(false);
   }
 
-  // Tick while a countdown is visible (busted re-entry hold, dealer choosing).
+  // While the previous in-between turn's card is on display, hold the next
+  // wager (matches the engine holding bots back for the same window).
+  const revealCfg = hand ? getVariant(hand.variant).resultReveal : undefined;
+  const revealActive = (() => {
+    if (!revealCfg) return false;
+    let latestAt: number | null = null;
+    for (const e of state.events) if (e.type === revealCfg.eventType) latestAt = e.at;
+    return latestAt !== null && game.serverNow() - latestAt < revealCfg.ms;
+  })();
+
+  // Tick while a countdown is visible (busted re-entry hold, dealer choosing,
+  // an in-between reveal blocking the wager buttons).
   const busted = !!me && me.status === 'busted';
   const choosing = state.phase === 'choosing' ? state.choosing : null;
   const [, forceTick] = useState(0);
   useEffect(() => {
-    if (!(busted && state.phase === 'hand-over') && !choosing) return;
-    const t = setInterval(() => forceTick((n) => n + 1), 500);
+    if (!(busted && state.phase === 'hand-over') && !choosing && !revealActive) return;
+    const t = setInterval(() => forceTick((n) => n + 1), 250);
     return () => clearInterval(t);
-  }, [busted, state.phase, choosing]);
+  }, [busted, state.phase, choosing, revealActive]);
 
   const leave = me && !me.isHost ? <LeaveButton game={game} /> : null;
 
@@ -247,30 +256,45 @@ export function ActionBar({ game }: { game: GameApi }) {
 
     const wagerSpec = legal.moves.find((mv) => mv.kind === 'wager');
     if (wagerSpec && wagerSpec.kind === 'wager') {
-      const amt = Math.min(wagerAmt ?? wagerSpec.min, wagerSpec.max);
+      // One-tap sizes instead of a slider: table min, ¼ / ½ / full pot —
+      // each capped at min(pot, stack) (= wagerSpec.max), deduped when the
+      // pot is small enough that sizes collide.
+      const clamp = (v: number) => Math.min(v, wagerSpec.max);
+      const pot = hand.potTotal;
+      const presets = [
+        { label: `$${clamp(state.config.minBet)}`, value: clamp(state.config.minBet) },
+        { label: '¼ Pot', value: clamp(Math.ceil(pot / 4)) },
+        { label: '½ Pot', value: clamp(Math.ceil(pot / 2)) },
+        { label: 'Pot', value: clamp(pot) },
+      ]
+        .filter((p) => p.value >= 1)
+        .filter((p, i, arr) => arr.findIndex((o) => o.value === p.value) === i);
       return (
         <div className={shell}>
           <span className="text-center text-sm font-semibold text-amber-300">
-            💰 Bet against the pot — hit the post and you pay double
+            {revealActive
+              ? '👀 Everyone sees the card…'
+              : '💰 Bet against the pot — hit the post and you pay double'}
           </span>
-          {wagerSpec.max > 0 && (
-            <div className="flex items-center gap-2">
-              <input type="range" className="flex-1 accent-amber-500"
-                min={wagerSpec.min} max={wagerSpec.max} value={amt}
-                onChange={(e) => setWagerAmt(Number(e.target.value))} />
-              <span className="w-14 text-right font-bold text-amber-400">${amt}</span>
-            </div>
-          )}
           <div className="flex gap-2">
             {leave}
-            <button className={`${bigBtn} bg-zinc-600`} disabled={busy}
+            <button className={`${bigBtn} bg-zinc-600`} disabled={busy || revealActive}
               onClick={() => submitMove({ kind: 'wager', amount: 0 })}>
               Pass
             </button>
-            <button className={`${bigBtn} bg-emerald-700`} disabled={busy || amt <= 0}
-              onClick={() => submitMove({ kind: 'wager', amount: amt })}>
-              Bet ${amt}
-            </button>
+            {presets.map((p) => (
+              <button
+                key={p.label}
+                className={`${bigBtn} bg-emerald-700 px-2`}
+                disabled={busy || revealActive}
+                onClick={() => submitMove({ kind: 'wager', amount: p.value })}
+              >
+                {p.label}
+                {p.label !== `$${p.value}` && (
+                  <div className="text-xs font-normal opacity-75">${p.value}</div>
+                )}
+              </button>
+            ))}
           </div>
         </div>
       );
@@ -307,7 +331,11 @@ export function ActionBar({ game }: { game: GameApi }) {
               onClick={() => toggle(i)}
               aria-pressed={selected.includes(i)}
             >
-              <PlayingCard card={card} size="sm" />
+              <PlayingCard
+                card={card}
+                size="sm"
+                wild={getVariant(hand.variant).wildRanks?.includes(card[0]) ?? false}
+              />
             </button>
           ))}
         </div>
