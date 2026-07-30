@@ -28,6 +28,15 @@ When more than one game is enabled, the deal rotates and each dealer picks the
 next game (bots pick too; an absent dealer repeats the last game). With exactly
 one game enabled, hands deal straight in — a classic single-game night.
 
+## What it looks like
+
+Live gameplay on a phone (screenshots from the production table):
+
+| Your deal — pick the game | Texas Hold'em | Seven-card stud | Baseball (no-peek) | In-between |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/dealer-choice.png" alt="Dealer's choice — the dealer picks from the enabled games" width="150"> | <img src="docs/screenshots/holdem.png" alt="Hold'em — flop out, check or bet" width="150"> | <img src="docs/screenshots/seven-stud.png" alt="Seven-card stud — your two hole cards are shaded DOWN, door cards showing" width="150"> | <img src="docs/screenshots/baseball.png" alt="Baseball — WILD-badged 9 makes a live-labeled Pair of Eights" width="150"> | <img src="docs/screenshots/in-between.png" alt="In-between — the third card lands in the middle and the win is announced" width="150"> |
+| Each dealer calls the game from the host-enabled list. | Ante poker: check-or-bet every street, live pot in the middle. | Your own face-down cards are shaded **DOWN**; up-cards are public. | Wild 3s/9s get a **WILD** band; made hands are labeled live for the table. | The played card lands *in between* and the result is announced to everyone. |
+
 ## House rules
 
 - **Antes, not blinds.** Every dealt-in player posts the ante at the start of each
@@ -58,6 +67,11 @@ one game enabled, hands deal straight in — a classic single-game night.
   away state, and "I'm back"
 - **Host controls**: approve/deny seats, choose enabled games, pause, kick,
   add/remove bots, end game (with final standings screen)
+- **Casino-style table talk**: live made-hand labels under every seat (computed
+  from face-up cards only — nothing hidden can leak), WILD bands on wild cards,
+  DOWN shading on your own hidden cards in mixed-visibility games (stud), and
+  in-between's played card revealed to the whole table with win/lose banners
+  (and a DOUBLE BURN!!! marquee when someone hits the post)
 - Responsive: portrait-first phone layout and desktop oval table; animated cards,
   chips, pot, and winner banners
 
@@ -73,6 +87,7 @@ compare-and-set versioned state) · Motion (Framer Motion) · Vitest · Vercel
 npm install
 npm run dev        # http://localhost:3000 — uses in-memory storage if no Redis env
 npm test           # engine + server suite (incl. 150-game fuzz with chip-conservation invariants)
+npm run test:e2e:ci  # Playwright: hosts an in-between night vs bots and plays it
 npm run lint
 npx tsc --noEmit
 ```

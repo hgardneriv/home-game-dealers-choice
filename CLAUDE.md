@@ -153,11 +153,21 @@ animations freeze in screenshots — tool environment, not a bug.
    (`GameVariant.resultReveal` + `shows` predicate; bots held via stampTurn;
    wager bar gated), win/lose banners, DOUBLE BURN marquee, one-tap presets
    (Pass/$min/¼/½/Pot), and the house rule **a pass burns NO card**. Stud:
-   own down cards shaded via `ClientHand.myFaceUp`. Wilds badged via
-   `GameVariant.wildRanks` (baseball 3/9). Live made-hand labels under every
-   seat (`src/engine/hand-label.ts` — opponents from face-up cards only).
-   Last-used name prefills create/join (localStorage). Collect the NEXT round
-   of play-testing feedback before inventing more.
+   own down cards shaded via `ClientHand.myFaceUp` — but ONLY in hands that
+   mix up+down cards (dynamic check; all-down games show nothing). Wilds
+   badged via `GameVariant.wildRanks` (baseball 3/9). Live made-hand labels
+   under every seat (`src/engine/hand-label.ts` — opponents from face-up
+   cards only). Last-used name prefills create/join (localStorage).
+   **Baseball rules bug fixed**: flip turns now ORBIT the table (canFlip:
+   active + has face-down + not the unique visible leader) until everyone
+   left is busted or all-up — a winner is never declared off hidden cards.
+   Scoped mutation pass done; equivalent-mutant proofs live in the
+   `ux-tweaks.test.ts` header. README has production gameplay screenshots
+   (`docs/screenshots/`, captured headless via the scratchpad Playwright
+   script — occluded-window screenshots freeze animations, headless doesn't).
+   Collect the NEXT round of play-testing feedback before inventing more.
+   Known cosmetic nit spotted in screenshots: 7-card rows on left-edge seats
+   clip off narrow portrait screens (baseball) — candidate for next pass.
 2. Bot tuning from play-testing (personality constants in `bot.ts` +
    per-variant strength/policy functions — all deliberately Stryker-excluded
    tuning knobs). Note: in-between bots still bet by spread only.
