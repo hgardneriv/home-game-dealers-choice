@@ -39,7 +39,9 @@ export function ActionBar({ game }: { game: GameApi }) {
   const revealActive = (() => {
     if (!revealCfg) return false;
     let latestAt: number | null = null;
-    for (const e of state.events) if (e.type === revealCfg.eventType) latestAt = e.at;
+    for (const e of state.events) {
+      if (e.type === revealCfg.eventType && (revealCfg.shows?.(e.data) ?? true)) latestAt = e.at;
+    }
     return latestAt !== null && game.serverNow() - latestAt < revealCfg.ms;
   })();
 

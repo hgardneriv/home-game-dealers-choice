@@ -72,9 +72,10 @@ export interface GameVariant {
    * Per-turn result reveal (in-between): after the variant emits `eventType`,
    * clients display the outcome for `ms` and the engine holds bots off their
    * next exchange turn until the window has passed, so every player sees the
-   * card that was played.
+   * card that was played. `shows` filters which events open a window (e.g. a
+   * pass burns no card — nothing to look at); omitted = every event does.
    */
-  resultReveal?: { eventType: string; ms: number };
+  resultReveal?: { eventType: string; ms: number; shows?: (data: unknown) => boolean };
 
   /**
    * Who opens a fresh round; default is left of the button (inHand[0]).

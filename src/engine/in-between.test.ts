@@ -196,14 +196,19 @@ describe('outcomes and chip movement', () => {
     expect(t.totalChips()).toBe(86);
   });
 
-  it('a pass still deals and shows the third card but moves no chips', () => {
+  it('a pass burns no card: it becomes the next player\'s first up-card', () => {
     const t = ibTable();
-    rigTurn(t, ['2s', 'Ks'], '8h');
+    rigTurn(t, ['2s', 'Ks'], '8h'); // '8h' rigged as the NEXT deck card
+    t.hand.deck[t.hand.deckPos + 1] = '4c';
     wager(t, 'p1', 0);
     expect(t.stack('p1')).toBe(18);
     expect(t.hand.pot).toBe(6);
-    expect(lastResult(t)).toMatchObject({ outcome: 'pass', amount: 0, third: '8h' });
+    expect(lastResult(t)).toMatchObject({ outcome: 'pass', amount: 0, third: null });
     expect(t.toAct).toBe('p2');
+    // The would-be third card was never drawn — it opens p2's turn instead.
+    expect(t.hand.board).toEqual(['8h', '4c']);
+    // Only the passer's two up-cards retired.
+    expect(t.hand.discards).toEqual(['2s', 'Ks']);
     expect(t.totalChips()).toBe(60);
   });
 
@@ -272,7 +277,7 @@ describe('ace call', () => {
   it('a first-card ace pauses the deal for the high/low call, then the wager', () => {
     const t = ibTable();
     expect(t.hand.board).toHaveLength(2); // p1's natural (non-ace) opening turn
-    rigDeck(t, ['2h', 'Ah', '9h', 'Kd']); // p1's third, then p2's turn
+    rigDeck(t, ['Ah', '9h', 'Kd']); // p1 passes (burns nothing), then p2's turn
     wager(t, 'p1', 0);
     expect(t.toAct).toBe('p2');
     expect(t.hand.board).toEqual(['Ah']); // only one card dealt so far

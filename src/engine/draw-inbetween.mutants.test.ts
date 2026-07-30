@@ -303,8 +303,9 @@ describe('in-between: inert showdown surface', () => {
 describe('in-between: deck accounting', () => {
   it('exactly 3 cards remaining is enough for a turn — no reshuffle', () => {
     const t = ibTable();
-    t.hand.deckPos = 48;
-    rigDeck(t, ['2h', '7h', '9c']); // current third, then next turn's two up-cards
+    // A pass burns nothing, so park exactly 3 cards before the next deal.
+    t.hand.deckPos = 49;
+    rigDeck(t, ['7h', '9c', '5d']); // next turn's two up-cards (+ its third)
     wager(t, t.toAct!, 0);
     expect(t.state.events.some((e) => e.type === 'in-between-reshuffle')).toBe(false);
     expect(t.hand.deck).toHaveLength(52);
@@ -314,7 +315,7 @@ describe('in-between: deck accounting', () => {
 
   it('a fresh turn clears any stale low-ace call (deal path, not rigging)', () => {
     const t = ibTable();
-    rigDeck(t, ['2c', 'Kh', '9h', '5c']); // p1 third; p2 gets Kh 9h with third 5c
+    rigDeck(t, ['Kh', '9h', '5c']); // p1 passes; p2 gets Kh 9h with third 5c
     wager(t, 'p1', 0);
     expect(t.hand.board).toEqual(['Kh', '9h']);
     wager(t, 'p2', 2); // window 9..13 — a 5 is outside
@@ -398,12 +399,12 @@ describe('in-between: turn resolution bookkeeping', () => {
       street: 'in-between',
       auto: false,
     });
-    rigTurn(t, ['2s', 'Ks'], '8h'); // now p2's turn
+    rigTurn(t, ['2s', 'Ks'], '8h'); // now p2's turn; '8h' stays in the deck
     wager(t, 'p2', 0);
     expect(lastEvent(t, 'action').data).toEqual({
       playerId: 'p2',
       move: 'pass',
-      detail: { amount: 0, outcome: 'pass', third: '8h' },
+      detail: { amount: 0, outcome: 'pass', third: null },
       street: 'in-between',
       auto: false,
     });

@@ -831,7 +831,7 @@ function stampTurn(m: Mutable): void {
     if (reveal && round.kind === 'exchange') {
       let lastAt = -Infinity;
       for (const e of state.events) {
-        if (e.type === reveal.eventType) lastAt = e.at;
+        if (e.type === reveal.eventType && (reveal.shows?.(e.data) ?? true)) lastAt = e.at;
       }
       wait = Math.max(wait, lastAt + reveal.ms - ctx.now + BOT_DELAY_BASE_MS);
     }

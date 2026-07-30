@@ -99,6 +99,20 @@ describe('in-between result-reveal pause', () => {
     expect(t.hand.round.botActAt).toBe(NOW + 4800);
   });
 
+  it('a pass burns no card, so it opens no reveal window for the next bot', () => {
+    const t = new Table(2, { config: IB });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    t.start();
+    expect(t.toAct).toBe('p1');
+    t.hand.board = ['2h', 'Kh'];
+    t.hand.vstate.awaitingAce = false;
+    t.apply({ type: 'variantMove', playerId: 'p1', move: { kind: 'wager', amount: 0 } });
+
+    const botId = Object.values(t.state.players).find((p) => p.isBot)!.id;
+    expect(t.toAct).toBe(botId);
+    expect(t.hand.round.botActAt).toBe(NOW + 800); // no 4s hold after a pass
+  });
+
   it("no recent result (a hand's first turn): normal think delay only", () => {
     // Put p1 at seat 2 so the added bot lands at seat 1 and opens the hand.
     const t = new Table(2, { config: IB, seats: [0, 2] });

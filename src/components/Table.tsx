@@ -80,7 +80,8 @@ function EmptySlot() {
 interface InBetweenResult {
   playerId: string;
   cards: [string, string];
-  third: string;
+  /** null on a pass (no card is burned) — those never open a reveal. */
+  third: string | null;
   outcome: 'win' | 'lose' | 'post' | 'pass';
   amount: number;
 }
@@ -123,7 +124,9 @@ export function Table({ game }: { game: GameApi }) {
   const revealEvent = (() => {
     if (!revealCfg) return null;
     let latest = null;
-    for (const e of state.events) if (e.type === revealCfg.eventType) latest = e;
+    for (const e of state.events) {
+      if (e.type === revealCfg.eventType && (revealCfg.shows?.(e.data) ?? true)) latest = e;
+    }
     if (!latest) return null;
     return game.serverNow() - latest.at < revealCfg.ms ? latest : null;
   })();
@@ -240,7 +243,7 @@ export function Table({ game }: { game: GameApi }) {
                 ? // Three slots dealt outside-in: up-cards in 1 and 3, the
                   // played card lands "in between" and stays for the reveal.
                   (reveal
-                    ? [reveal.cards[0], reveal.third, reveal.cards[1]]
+                    ? [reveal.cards[0], reveal.third ?? undefined, reveal.cards[1]]
                     : [hand?.board[0], undefined, hand?.board[1]]
                   ).map((card, i) =>
                     card ? (

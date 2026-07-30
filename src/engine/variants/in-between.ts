@@ -1,4 +1,5 @@
 import type {
+  Card,
   ExchangeLegal,
   GameState,
   HandState,
@@ -15,7 +16,9 @@ import { newDeck, rankValue, shuffle, type RandInt } from '../deck';
  * face-up cards.
  *
  * A turn: two cards face-up on `hand.board`, then the player wagers
- * 0..min(pot, stack) (0 = pass). The third card is dealt either way:
+ * 0..min(pot, stack) (0 = pass). A pass burns NO card — the two up-cards
+ * retire and the next card in the deck becomes the next player's first card
+ * (house rule, play-testing 2026-07-29). On a wager the third card is dealt:
  * strictly between -> the player takes the wager from the pot; outside ->
  * pays the wager into the pot; equal in rank to either card ("hits the
  * post") -> pays DOUBLE the wager, capped at their stack (table stakes).
@@ -40,11 +43,12 @@ import { newDeck, rankValue, shuffle, type RandInt } from '../deck';
  *     A turn's first card is an ace; the player owes a high/low call.
  * - 'in-between-turn'     { playerId, cards: [Card, Card], aceLow?: boolean }
  *     A turn's two up-cards are set (after the ace call, if any).
- * - 'in-between-result'   { playerId, cards: [Card, Card], third,
+ * - 'in-between-result'   { playerId, cards: [Card, Card], third: Card|null,
  *                           outcome: 'win'|'lose'|'post'|'pass',
  *                           amount, potAfter }
- *     The third card fell. `amount` is the chips that actually moved
- *     (post = doubled wager capped at stack; pass = 0).
+ *     The turn resolved. `third` is null on a pass (no card is burned);
+ *     `amount` is the chips that actually moved (post = doubled wager capped
+ *     at stack; pass = 0). Reveal machinery keys off `third` being non-null.
  * - 'in-between-reshuffle' {}
  *     The deck ran low and was rebuilt mid-hand.
  */
@@ -127,8 +131,13 @@ export const inBetween: GameVariant = {
   fitsPlayers: (count) => count >= 2 && count <= 6,
   potStyle: 'communal',
   // Every turn's third card stays on display this long so the whole table
-  // sees what was played before the next turn's cards replace it.
-  resultReveal: { eventType: 'in-between-result', ms: 4000 },
+  // sees what was played before the next turn's cards replace it. A pass
+  // burns no card, so it opens no reveal window.
+  resultReveal: {
+    eventType: 'in-between-result',
+    ms: 4000,
+    shows: (data) => (data as { third: Card | null }).third !== null,
+  },
 
   deal(v): PhasePlan {
     const hand = v.hand;
@@ -231,36 +240,40 @@ export const inBetween: GameVariant = {
       const lo = Math.min(v1, v2);
       const hi = Math.max(v1, v2);
 
-      const third = v.draw();
-      const t = rankValue(third);
-      // "Hits the post" = matches either up-card's RANK (even a low-called ace).
-      const hitsPost = t === rankValue(c1) || t === rankValue(c2);
-
       let outcome: 'win' | 'lose' | 'post' | 'pass';
       let moved = 0;
+      let third: Card | null = null;
       if (amount === 0) {
+        // Pass: no card is burned — the next card in the deck becomes the
+        // next player's first up-card.
         outcome = 'pass';
-      } else if (hitsPost) {
-        outcome = 'post';
-        moved = Math.min(amount * 2, player.stack); // double, table-stakes capped
-        player.stack -= moved;
-        hand.pot += moved;
-      } else if (t > lo && t < hi) {
-        outcome = 'win';
-        moved = amount;
-        player.stack += moved;
-        hand.pot -= moved;
       } else {
-        outcome = 'lose';
-        moved = amount;
-        player.stack -= moved;
-        hand.pot += moved;
+        third = v.draw();
+        const t = rankValue(third);
+        // "Hits the post" = matches either up-card's RANK (even a low-called ace).
+        if (t === rankValue(c1) || t === rankValue(c2)) {
+          outcome = 'post';
+          moved = Math.min(amount * 2, player.stack); // double, table-stakes capped
+          player.stack -= moved;
+          hand.pot += moved;
+        } else if (t > lo && t < hi) {
+          outcome = 'win';
+          moved = amount;
+          player.stack += moved;
+          hand.pot -= moved;
+        } else {
+          outcome = 'lose';
+          moved = amount;
+          player.stack -= moved;
+          hand.pot += moved;
+        }
+        st.anyWagered = true;
       }
-      if (amount > 0) st.anyWagered = true;
       if (player.stack === 0 && !hand.allIn.includes(playerId)) hand.allIn.push(playerId);
 
       // Retire the turn's cards.
-      hand.discards.push(c1, c2, third);
+      hand.discards.push(c1, c2);
+      if (third !== null) hand.discards.push(third);
       hand.board = [];
       st.aceLow = false;
 
