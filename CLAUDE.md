@@ -117,6 +117,12 @@ negative stacks, termination) checked after every action. `Table` harness in
 `src/engine/test-utils.ts` (zeroRand → first-hand button at lowest eligible
 seat; `rig(playerCards, board)` plants cards; `legalFor` returns narrowed
 `BettingLegal`). Server CAS tests use `MemoryKV` via `globalThis.__gameKV`.
+**E2E**: `npm run test:e2e:ci` — Playwright plays a real in-between night vs
+bots (reuses dev server on :3000). `test:e2e` runs headed; the user has SEEN
+it once and does not want headed runs repeated — default to :ci. E2E clicks
+must be best-effort with short timeouts (SSE re-renders every 500ms; turns
+expire server-side), and `locator.isEnabled()` WAITS on absent elements —
+gate it behind `isVisible()`.
 When touching engine logic, add a scenario test first; fuzz catches
 conservation breaks. Mutation testing: `npx stryker run` (engine+server,
 `bot.ts` excluded) — **94.5% kill rate** (July 2026 hardening pass; 618-test
@@ -142,16 +148,19 @@ animations freeze in screenshots — tool environment, not a bug.
 
 ## Roadmap (user-confirmed) — NEXT SESSION STARTS HERE
 
-1. **Per-game UX tweaks (NEXT).** The user has play-tested extensively
-   (2026-07-29): "game play looks good but I see areas for UX improvement
-   during game play with specific games." Ask them for the specific per-game
-   pain points first — they have a list. Expect small, quick iterations
-   (client components, event copy, timing/animation affordances), not engine
-   changes. After UI-only changes: `npm test` + deploy; after any engine
-   change: scenario test first, fuzz, consider a `/mutate`-style pass.
+1. **Per-game UX pass SHIPPED (2026-07-29, deployed).** In-between: cards in
+   slots 1+3, third card lands in the middle for a 4s all-table reveal
+   (`GameVariant.resultReveal` + `shows` predicate; bots held via stampTurn;
+   wager bar gated), win/lose banners, DOUBLE BURN marquee, one-tap presets
+   (Pass/$min/¼/½/Pot), and the house rule **a pass burns NO card**. Stud:
+   own down cards shaded via `ClientHand.myFaceUp`. Wilds badged via
+   `GameVariant.wildRanks` (baseball 3/9). Live made-hand labels under every
+   seat (`src/engine/hand-label.ts` — opponents from face-up cards only).
+   Last-used name prefills create/join (localStorage). Collect the NEXT round
+   of play-testing feedback before inventing more.
 2. Bot tuning from play-testing (personality constants in `bot.ts` +
    per-variant strength/policy functions — all deliberately Stryker-excluded
-   tuning knobs).
+   tuning knobs). Note: in-between bots still bet by spread only.
 3. House-rule toggles parked for later: baseball pay-for-3 / extra-card-on-4,
    draw 4-with-an-ace, guts secret simultaneous declares, dedicated Redis
    resource if game nights hit the shared free-plan limits.
