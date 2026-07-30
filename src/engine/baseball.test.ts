@@ -266,8 +266,17 @@ describe('flip-to-beat', () => {
     expect(t.hand.round).toMatchObject({ kind: 'betting', street: 'bet-3' });
     expect(t.toAct).toBe('p0');
     checkRound(t);
+    // The cursor orbits back to p1 (behind, cards in hand) — no early winner.
+    expect(t.state.phase).toBe('playing');
+    expect(t.hand.round).toMatchObject({ kind: 'exchange', street: 'flip' });
+    expect(t.toAct).toBe('p1');
+    // P1's junk never catches ace-high: six more flips and they bust out,
+    // handing p0 the pot as a fold win — nothing hidden is ever revealed.
+    for (let i = 0; i < 6; i++) flip(t, 'p1');
+    expect(t.hand.folded).toContain('p1');
     expect(t.state.phase).toBe('hand-over');
     expect(t.hand.result!.pots[0].winners).toEqual(['p0']);
+    expect(t.hand.result!.revealed).toEqual({});
     expect(t.totalChips()).toBe(60);
   });
 
@@ -303,8 +312,14 @@ describe('betting choreography', () => {
     expect(t.hand.round).toMatchObject({ kind: 'betting', street: 'bet-2' });
     expect(t.toAct).toBe('p0'); // new best visible hand opens
     checkRound(t);
+    // p1 is behind with cards in hand — the orbit continues; their junk never
+    // beats ace-high, so they flip out and p0 takes it as a fold win.
+    expect(t.state.phase).toBe('playing');
+    expect(t.toAct).toBe('p1');
+    for (let i = 0; i < 6; i++) flip(t, 'p1');
+    expect(t.hand.folded).toContain('p1');
     expect(t.state.phase).toBe('hand-over');
-    // p0's five aces beat p1's king high: antes 3 + bets 4.
+    // Antes 3 + bets 4 all go to p0.
     expect(t.hand.result!.pots[0]).toMatchObject({ amount: 7, winners: ['p0'] });
     expect(t.stack('p0')).toBe(24);
     expect(t.totalChips()).toBe(60);
@@ -343,8 +358,8 @@ describe('betting choreography', () => {
   });
 });
 
-describe('full hand to showdown', () => {
-  it('alternates flip and betting rounds for every player, then scores wilds', () => {
+describe('full hand: orbits, busts, and showdown', () => {
+  it('flip turns orbit the table — no winner until everyone left is out of cards', () => {
     const t = riggedTable();
     flip(t, 'p1'); // Kd
     expect(t.hand.round.street).toBe('bet-1');
@@ -356,18 +371,57 @@ describe('full hand to showdown', () => {
     checkRound(t);
     flip(t, 'p0'); // As — ace high loses to pair of queens
     expect(t.toAct).toBe('p0');
-    flip(t, 'p0'); // Ac — pair of aces takes the lead: exactly 2 flips
+    flip(t, 'p0'); // Ad — pair of aces takes the lead: exactly 2 flips
     expect(t.hand.round.street).toBe('bet-3');
     expect(t.toAct).toBe('p0');
     checkRound(t);
 
+    // THE BUG (play-testing 2026-07-29): this used to be showdown, declaring
+    // p0 the winner off five hidden cards. The orbit must continue: p1 is
+    // behind with six cards face down.
+    expect(t.state.phase).toBe('playing');
+    expect(t.hand.round).toMatchObject({ kind: 'exchange', street: 'flip' });
+    expect(t.toAct).toBe('p1');
+    for (let i = 0; i < 6; i++) flip(t, 'p1'); // junk — busts out
+    expect(t.hand.folded).toContain('p1');
+    checkRound(t); // bet-4: p2 and p0
+    // p2, behind on pair of queens, flips their remaining five and busts too.
+    expect(t.toAct).toBe('p2');
+    for (let i = 0; i < 5; i++) flip(t, 'p2');
+    expect(t.hand.folded).toContain('p2');
+    // Everyone else busted out — p0 wins WITHOUT exposing hidden cards.
     expect(t.state.phase).toBe('hand-over');
-    const result = t.hand.result!;
-    expect(result.pots[0]).toMatchObject({ amount: 3, winners: ['p0'] });
-    expect(result.descriptions['p0']).toBe('Five of a Kind, Aces');
-    expect(result.revealed['p0']).toEqual(P0);
+    expect(t.hand.result!.pots[0]).toMatchObject({ amount: 3, winners: ['p0'] });
+    expect(t.hand.result!.revealed).toEqual({});
     expect(t.stack('p0')).toBe(22);
     expect(t.totalChips()).toBe(60);
+  });
+
+  it('true showdown: ends only when the beaten players are all-up, leader wins', () => {
+    const t = new Table(2, { config: BASEBALL });
+    t.start(); // order [p1, p0]
+    // p0's SEVENTH card finally beats p1's lone king (K-T high > K high);
+    // p1 then retakes the lead with one flip (K-Q high). p0 has no cards
+    // left to answer — showdown, and p1's hidden cards count for them.
+    rig7(t, {
+      p1: ['Kd', 'Qc', '2c', '4h', '5s', '7d', '8c'],
+      p0: ['2s', '4c', '5c', '7h', '8s', 'Th', 'Kh'],
+    });
+    flip(t, 'p1'); // Kd
+    checkRound(t);
+    for (let i = 0; i < 7; i++) flip(t, 'p0'); // seventh (Kh) takes the lead
+    expect(t.hand.folded).not.toContain('p0');
+    expect(t.hand.playerCards['p0'].faceUp).toEqual(Array(7).fill(true));
+    checkRound(t); // bet-2
+    expect(t.toAct).toBe('p1'); // behind K vs K-T — orbit returns to p1
+    flip(t, 'p1'); // Qc — K-Q beats K-T in one card
+    checkRound(t); // bet-3
+    // p0 is all-up and behind; p1 leads — nobody may flip: showdown.
+    expect(t.state.phase).toBe('hand-over');
+    const result = t.hand.result!;
+    expect(result.pots[0]).toMatchObject({ amount: 2, winners: ['p1'] });
+    expect(result.revealed['p1']).toHaveLength(7);
+    expect(t.totalChips()).toBe(40);
   });
 
   it('folding to a bet ends the hand as a fold win', () => {
@@ -402,7 +456,15 @@ describe('all-in interactions', () => {
     expect(t.toAct).toBe('p0');
     flip(t, 'p0');
     flip(t, 'p0'); // pair of aces
-    // bet-3 skipped as well — straight to showdown.
+    // Betting still skipped; the orbit continues through the trailing
+    // players' remaining cards until both bust out — p0 never re-flips.
+    expect(t.hand.round).toMatchObject({ kind: 'exchange', street: 'flip' });
+    expect(t.toAct).toBe('p1');
+    for (let i = 0; i < 6; i++) flip(t, 'p1');
+    expect(t.hand.folded).toContain('p1');
+    expect(t.toAct).toBe('p2');
+    for (let i = 0; i < 5; i++) flip(t, 'p2');
+    expect(t.hand.folded).toContain('p2');
     expect(t.state.phase).toBe('hand-over');
     expect(t.hand.result!.pots[0]).toMatchObject({ amount: 60, winners: ['p0'] });
     expect(t.stack('p0')).toBe(60);
@@ -498,10 +560,15 @@ describe('dealer choice integration', () => {
     flip(t, 'p2');
     checkRound(t);
     flip(t, 'p0');
-    flip(t, 'p0');
+    flip(t, 'p0'); // pair of aces leads
     checkRound(t);
+    // The orbit runs the trailing hands out of cards; p0 wins as the last
+    // player standing.
+    for (let i = 0; i < 6; i++) flip(t, 'p1');
+    checkRound(t);
+    for (let i = 0; i < 5; i++) flip(t, 'p2');
     expect(t.state.phase).toBe('hand-over');
-    expect(t.hand.result!.descriptions['p0']).toBe('Five of a Kind, Aces');
+    expect(t.hand.result!.pots[0]).toMatchObject({ winners: ['p0'] });
     expect(t.totalChips()).toBe(60);
   });
 });

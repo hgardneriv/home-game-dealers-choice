@@ -14,7 +14,16 @@ import type { MoveError } from '../betting';
  * one at a time until their visible hand STRICTLY beats the best visible hand
  * still live at the table — or runs out of cards and busts out of the hand.
  * Each completed flip turn is followed by a betting round opened by the best
- * visible hand. Showdown scores all seven cards with wilds.
+ * visible hand.
+ *
+ * Flip turns keep ORBITING the table (bug fix, play-testing 2026-07-29): the
+ * cursor wraps past the current visible leader (they have nothing to prove
+ * and would only leak information) to the next player who is behind and still
+ * holds a face-down card. A winner is never declared while someone could
+ * still flip: the hand ends either as a fold win (everyone else busted/folded)
+ * or at showdown once every remaining player is all-up — except possibly the
+ * final leader, whose hidden cards can only improve an already-winning hand.
+ * Showdown scores all seven cards with wilds.
  *
  * Deck math: 6 players × 7 = 42 ≤ 52.
  *
@@ -22,8 +31,8 @@ import type { MoveError } from '../betting';
  *  - flipCursor: index into hand.inHand of whose flip turn is current/next.
  *  - betNo: counter naming the betting streets 'bet-1', 'bet-2', …
  * nextPhase alternates: a closed flip round yields a betting round; a closed
- * betting round advances the cursor to the next un-flipped player still in,
- * or showdown once everyone has had their turn.
+ * betting round advances the cursor (wrapping) to the next eligible flipper,
+ * or showdown when nobody may flip.
  */
 
 function cursorOf(hand: HandState): number {
@@ -53,6 +62,17 @@ function bestRivalVisible(hand: HandState, playerId: string): Card[] {
     }
   }
   return best;
+}
+
+/**
+ * Eligible to take a flip turn: still in, holding at least one face-down
+ * card, and NOT strictly ahead of every visible rival — the leader has
+ * nothing to prove, and flipping would only leak information.
+ */
+function canFlip(hand: HandState, id: string): boolean {
+  if (hand.folded.includes(id)) return false;
+  if (!hand.playerCards[id].faceUp.includes(false)) return false;
+  return evaluateWild(visibleCards(hand, id)) <= evaluateWild(bestRivalVisible(hand, id));
 }
 
 /**
@@ -130,21 +150,29 @@ export const baseball: GameVariant = {
       hand.vstate.betNo = betNo;
       return { kind: 'betting', street: `bet-${betNo}` };
     }
-    // A betting round closed — next player still in who hasn't had a flip
-    // turn (skipping players folded or busted out), else showdown.
-    let cur = cursorOf(hand) + 1;
-    while (cur < hand.inHand.length && hand.folded.includes(hand.inHand[cur])) cur++;
-    hand.vstate.flipCursor = cur;
-    if (cur < hand.inHand.length) return { kind: 'exchange', street: 'flip' };
+    // A betting round closed — the cursor orbits (wrapping) to the next
+    // eligible flipper. Nobody may flip => showdown. Terminates: every flip
+    // turn flips at least one card or busts its owner.
+    const n = hand.inHand.length;
+    const from = cursorOf(hand);
+    for (let i = 1; i <= n; i++) {
+      const idx = (from + i) % n;
+      if (canFlip(hand, hand.inHand[idx])) {
+        hand.vstate.flipCursor = idx;
+        return { kind: 'exchange', street: 'flip' };
+      }
+    }
     return { kind: 'showdown' };
   },
 
   firstToAct(state: GameState, hand: HandState): string | null {
     if (hand.round.kind === 'exchange') {
-      // The flip round belongs to the cursor player.
-      for (let i = cursorOf(hand); i < hand.inHand.length; i++) {
-        const id = hand.inHand[i];
-        if (!hand.folded.includes(id)) return id;
+      // The flip round belongs to the cursor player; if they vanished
+      // (kick/leave), scan onward — wrapping — for the next eligible flipper.
+      const n = hand.inHand.length;
+      for (let i = 0; i < n; i++) {
+        const id = hand.inHand[(cursorOf(hand) + i) % n];
+        if (canFlip(hand, id)) return id;
       }
       return null;
     }
