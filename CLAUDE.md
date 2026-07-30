@@ -140,12 +140,24 @@ animations freeze in screenshots — tool environment, not a bug.
 - `.claude/settings.local.json` gitignored; `.env.local` / `.vercel` never
   committed.
 
-## Roadmap (user-confirmed)
+## Roadmap (user-confirmed) — NEXT SESSION STARTS HERE
 
-1. **Deploy**: new Vercel project + Upstash Redis + SESSION_SECRET; update the
-   Deployment section above and README when done.
-2. **Mutation hardening pass** over the whole engine (`npx stryker run`,
-   expect a dip from the refactor; target ~90% kill again).
-3. Play-testing with real friends → bot tuning + UX iterations. House-rule
-   toggles parked for later: baseball pay-for-3/extra-card-on-4, draw
-   4-with-an-ace, guts secret simultaneous declares.
+1. **Per-game UX tweaks (NEXT).** The user has play-tested extensively
+   (2026-07-29): "game play looks good but I see areas for UX improvement
+   during game play with specific games." Ask them for the specific per-game
+   pain points first — they have a list. Expect small, quick iterations
+   (client components, event copy, timing/animation affordances), not engine
+   changes. After UI-only changes: `npm test` + deploy; after any engine
+   change: scenario test first, fuzz, consider a `/mutate`-style pass.
+2. Bot tuning from play-testing (personality constants in `bot.ts` +
+   per-variant strength/policy functions — all deliberately Stryker-excluded
+   tuning knobs).
+3. House-rule toggles parked for later: baseball pay-for-3 / extra-card-on-4,
+   draw 4-with-an-ace, guts secret simultaneous declares, dedicated Redis
+   resource if game nights hit the shared free-plan limits.
+
+Session mechanics that worked well (keep): milestone commits with rich
+messages; parallel background agents for disjoint file sets (new-files-only
+rule avoids conflicts; `_registerVariantForTest` lets variant tests run
+unregistered); browser smoke via single-variant hosted games; the build plan
+lives as a claude.ai artifact the user wants kept current.
