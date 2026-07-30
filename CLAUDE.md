@@ -174,6 +174,12 @@ animations freeze in screenshots — tool environment, not a bug.
 3. House-rule toggles parked for later: baseball pay-for-3 / extra-card-on-4,
    draw 4-with-an-ace, guts secret simultaneous declares, dedicated Redis
    resource if game nights hit the shared free-plan limits.
+4. **Opt-in voice chat** (parked, feasibility assessed 2026-07-30 — see
+   `docs/voice-chat-feasibility.md`): Discord-style table talk for human
+   players. Verdict: feasible; recommended path is Tier 1 (embedded provider —
+   Daily/Jitsi/LiveKit widget in `GameRoom`, ~1 day, zero ops); a native WebRTC
+   mesh works at this scale but needs a signaling channel (NOT through
+   `GameState`) and a third-party TURN relay.
 
 Session mechanics that worked well (keep): milestone commits with rich
 messages; parallel background agents for disjoint file sets (new-files-only
