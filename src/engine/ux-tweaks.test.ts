@@ -7,6 +7,24 @@ import { redactForPlayer } from '@/server/redact';
  * Play-testing UX pass (2026-07-29): live hand labels, own-card face-up
  * exposure (stud shading), and the in-between result-reveal pause that holds
  * bots off their turn until the table has seen the previous card.
+ *
+ * Known-equivalent surviving mutants (scoped Stryker pass, 2026-07-29):
+ * - hand-label bestOf `cards.length === 5` fast path → false: the
+ *   combination path computes the identical score for 5 cards (perf only).
+ * - hand-label `score > best` → `>=`: ties overwrite best with an equal
+ *   value — same result.
+ * - baseball flip-orbit scan bounds (`i <= n` ↔ `i < n` at the wrap): the
+ *   cursor player is never eligible right after acting — they either took
+ *   the lead (skipped) or busted (folded) — so probing `from` itself can
+ *   never match.
+ * - redact `h.round.toAct === playerId` → `true` in the legalActions
+ *   ternary: getLegalActions itself returns null for a player not on turn.
+ * - hand-label partialLabel `count === 2` → true in the two-pair guard:
+ *   groups are count-sorted, so groups[1] holding a pair implies groups[0]
+ *   does too — the guard can never be reached falsely.
+ * - hand-label defensive shapes (`slice(0, 7)`, five-draw/guts length
+ *   checks, the board default): callers only pass legal shapes — holdem is
+ *   ≤ 2 + 5 cards, five-draw hands are always 5, guts always 3.
  */
 
 describe('handLabel', () => {
@@ -26,6 +44,18 @@ describe('handLabel', () => {
     expect(handLabel('seven-stud', ['Ks', 'Kd', 'Kc', 'Kh', '2c', '3d', '4h'])).toBe(
       'Four of a Kind, Kings'
     );
+    // Partial made groups (2–4 cards) hit the group ladder directly.
+    expect(handLabel('seven-stud', ['Ks', 'Kd', 'Kc'])).toBe('Three of a Kind, Kings');
+    expect(handLabel('seven-stud', ['Ks', 'Kd', 'Kc', 'Kh'])).toBe('Four of a Kind, Kings');
+    // Group order is by count then rank, not by the order cards arrived.
+    expect(handLabel('seven-stud', ['2c', '2h', 'Kd', 'Ks'])).toBe('Two Pair, Kings and Twos');
+    expect(handLabel('seven-stud', ['Ac', '2c', '2h'])).toBe('Pair of Twos');
+    // 5+ up-cards evaluate as real poker hands, not just groups.
+    expect(handLabel('seven-stud', ['2h', '5h', '9h', 'Jh', 'Kh'])).toBe('Flush, King High');
+    // Six cards: the best five must include the LAST card (combination sweep).
+    expect(handLabel('seven-stud', ['2h', '5h', '9h', 'Jh', '2c', 'Kh'])).toBe(
+      'Flush, King High'
+    );
   });
 
   it('is wild-aware for baseball (3s and 9s)', () => {
@@ -44,6 +74,8 @@ describe('handLabel', () => {
   it('labels five-draw hands and never labels in-between or empty hands', () => {
     expect(handLabel('five-draw', ['9h', '9d', '2s', '5c', 'Jd'])).toBe('Pair of Nines');
     expect(handLabel('five-draw', ['9h', '8d', '2s', '5c', 'Jd'])).toBeNull();
+    // A real 5-card evaluation, not just rank groups.
+    expect(handLabel('five-draw', ['2h', '5h', '9h', 'Jh', 'Kh'])).toBe('Flush, King High');
     expect(handLabel('in-between', ['9h', '9d'])).toBeNull();
     expect(handLabel('holdem', [])).toBeNull();
   });
