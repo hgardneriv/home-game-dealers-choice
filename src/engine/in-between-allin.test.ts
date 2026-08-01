@@ -90,7 +90,7 @@ describe('a broke in-between player is skipped, not prompted', () => {
     expect(turnsFor('p2')).toBeGreaterThanOrEqual(3); // kept playing throughout
   });
 
-  it('an all-pass orbit among the solvent ends the hand and busts them', () => {
+  it('three idle orbits among the solvent end the hand and bust them', () => {
     const t = brokeP1();
 
     // Orbit 1 counted p1's losing wager, so passing it out opens orbit 2.
@@ -99,9 +99,12 @@ describe('a broke in-between player is skipped, not prompted', () => {
     expect(t.state.phase).toBe('playing');
     expect(t.toAct).toBe('p2'); // straight past broke p1
 
-    // Orbit 2 is genuinely all-pass — only the solvent owe a decision.
-    pass(t, 'p2');
-    pass(t, 'p0');
+    // Orbits 2-4 are genuinely all-pass — only the solvent owe a decision,
+    // and the third consecutive idle orbit trips the leash.
+    for (let i = 0; i < 3; i++) {
+      pass(t, 'p2');
+      pass(t, 'p0');
+    }
 
     expect(t.state.phase).not.toBe('playing'); // hand over
     expect(t.state.players['p1'].status).toBe('busted');

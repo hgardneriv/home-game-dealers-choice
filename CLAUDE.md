@@ -168,6 +168,13 @@ animations freeze in screenshots — tool environment, not a bug.
    Collect the NEXT round of play-testing feedback before inventing more.
    Known cosmetic nit spotted in screenshots: 7-card rows on left-edge seats
    clip off narrow portrait screens (baseball) — candidate for next pass.
+   **In-between all-pass leash (2026-08-01, user-picked house rule)**: a
+   single idle orbit no longer ends the hand — the pot-carry backstop fires
+   only after THREE consecutive all-pass orbits (`MAX_PASS_ORBITS`,
+   `vstate.passOrbits`; any wager resets the count). Hands now mostly run
+   until the pot is emptied. Deck safety was already pre-emptive (rebuild
+   before any turn with <3 cards left — a turn can never run dry mid-deal)
+   and is now pinned by a test. Stryker on the leash logic: 30/30.
    **In-between broke-player skip (2026-08-01, play-test bug)**: a player who
    lost their whole stack mid-hand used to be dealt a dead pass-only turn
    every orbit until the hand ended. Now `GameVariant.exchange.sitsOut`

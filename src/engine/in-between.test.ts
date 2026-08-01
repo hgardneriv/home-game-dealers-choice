@@ -185,8 +185,8 @@ describe('outcomes and chip movement', () => {
     expect(t.state.phase).toBe('playing');
     expect(t.toAct).toBe('p2'); // straight past p1
     expect(getLegalActions(t.state, 'p1')).toBeNull();
-    passTurn(t); // p2
-    passTurn(t); // p0 -> all-pass orbit ends the hand
+    // Three idle orbits of the two solvent players end the hand.
+    for (let i = 0; i < 6; i++) passTurn(t);
     expect(t.state.phase).toBe('hand-over');
     expect(t.state.carryPot).toBe(10);
     expect(t.state.players['p1'].status).toBe('busted');
@@ -339,11 +339,9 @@ describe('ace call', () => {
 });
 
 describe('orbits, hand end, and carry', () => {
-  it('a full orbit of passes ends the hand; the pot carries and seeds the next hand', () => {
+  it('three all-pass orbits end the hand; the pot carries and seeds the next hand', () => {
     const t = ibTable();
-    passTurn(t);
-    passTurn(t);
-    passTurn(t);
+    for (let i = 0; i < 9; i++) passTurn(t); // 3 players × 3 idle orbits
     expect(t.state.phase).toBe('hand-over');
     expect(t.state.carryPot).toBe(6);
     expect(t.totalChips()).toBe(60);
@@ -370,12 +368,65 @@ describe('orbits, hand end, and carry', () => {
       .at(-1)!;
     expect(dealt.data).toMatchObject({ playerId: 'p1' }); // orbit 2 dealt for p1
     expect(t.hand.pot).toBe(8);
-    // Orbit 2: everyone passes -> hand over, remaining pot carries.
-    passTurn(t);
-    passTurn(t);
-    passTurn(t);
+    // Orbits 2-4: three idle orbits -> hand over, remaining pot carries.
+    for (let i = 0; i < 9; i++) passTurn(t);
     expect(t.state.phase).toBe('hand-over');
     expect(t.state.carryPot).toBe(8);
+    expect(t.totalChips()).toBe(60);
+  });
+});
+
+describe('all-pass leash: THREE consecutive pass orbits end the hand', () => {
+  // House rule (2026-08-01): one idle orbit must not kill a live pot — the
+  // hand runs until the pot is emptied, with the carry backstop firing only
+  // after three all-pass orbits in a row.
+  it('a single all-pass orbit no longer ends the hand', () => {
+    const t = ibTable();
+    passTurn(t);
+    passTurn(t);
+    passTurn(t); // orbit 1: everyone passed
+    expect(t.state.phase).toBe('playing');
+    expect(t.toAct).toBe('p1'); // orbit 2 opens normally
+    expect(t.hand.pot).toBe(6); // untouched
+    expect(t.totalChips()).toBe(60);
+  });
+
+  it('a wager resets the consecutive-pass count', () => {
+    const t = ibTable();
+    for (let i = 0; i < 6; i++) passTurn(t); // orbits 1-2: all pass
+    expect(t.state.phase).toBe('playing');
+
+    rigTurn(t, ['5s', '9s'], '2h');
+    wager(t, 'p1', 2); // orbit 3 opens with a losing wager — count resets
+    passTurn(t);
+    passTurn(t);
+    expect(t.state.phase).toBe('playing');
+
+    for (let i = 0; i < 6; i++) passTurn(t); // orbits 4-5: all pass again
+    expect(t.state.phase).toBe('playing'); // only 2 consecutive — still alive
+
+    passTurn(t);
+    passTurn(t);
+    passTurn(t); // orbit 6: the third consecutive all-pass orbit
+    expect(t.state.phase).toBe('hand-over');
+    expect(t.state.carryPot).toBe(8); // antes 6 + p1's lost 2
+    expect(t.totalChips()).toBe(60);
+  });
+
+  it('turns never run dry mid-deal: the reshuffle happens before the turn', () => {
+    // The user-feared case: the deck's LAST card goes out as a third card —
+    // the next turn must open on a rebuilt deck with first, second, AND a
+    // third in reserve.
+    const t = ibTable();
+    t.hand.deckPos = 51; // one card left; current turn already has its up-cards
+    wager(t, t.toAct!, 1); // third card = the final deck card
+    expect(t.state.events.filter((e) => e.type === 'in-between-reshuffle')).toHaveLength(1);
+    expect(t.hand.deck).toHaveLength(52);
+    expect(t.state.phase).toBe('playing');
+    // The freshly dealt turn has its up-card(s), and at least 3 cards were
+    // available for the whole turn (ace flows draw the rest in apply()).
+    expect(t.hand.board.length).toBeGreaterThanOrEqual(1);
+    expect(t.hand.deck.length - t.hand.deckPos).toBeGreaterThanOrEqual(3 - t.hand.board.length);
     expect(t.totalChips()).toBe(60);
   });
 });
@@ -392,10 +443,9 @@ describe('deck reshuffle', () => {
     expect(t.hand.board.length).toBeGreaterThanOrEqual(1);
     expect(t.state.phase).toBe('playing');
     expect(t.totalChips()).toBe(60);
-    // Play continues normally on the fresh deck.
-    passTurn(t);
-    passTurn(t);
-    expect(t.state.phase).toBe('hand-over'); // all-pass orbit
+    // Play continues normally on the fresh deck until the idle leash trips.
+    for (let i = 0; i < 8; i++) passTurn(t); // finish orbit 1, then 2 more idle orbits
+    expect(t.state.phase).toBe('hand-over');
     expect(t.state.carryPot).toBe(6);
     expect(t.totalChips()).toBe(60);
   });

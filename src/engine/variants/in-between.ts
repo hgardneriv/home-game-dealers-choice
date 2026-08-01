@@ -30,8 +30,10 @@ import { newDeck, rankValue, shuffle, type RandInt } from '../deck';
  * high (14).
  *
  * Play orbits (one turn per player per exchange round) until the pot is
- * empty. Backstop: an orbit in which everyone passes ends the hand — the
- * engine carries the leftover pot to the next hand (state.carryPot).
+ * empty. Backstop (house rule 2026-08-01: one idle orbit must not kill a
+ * live pot): THREE consecutive orbits in which everyone passes end the hand
+ * — the engine carries the leftover pot to the next hand (state.carryPot).
+ * Any wager resets the count.
  *
  * Deck math: 3 cards per turn across unlimited orbits can exhaust 52 — when
  * fewer than 3 cards remain before a turn, the deck is rebuilt from a fresh
@@ -60,7 +62,12 @@ interface InBetweenState {
   aceLow?: boolean;
   /** Someone wagered > 0 this orbit — cleared when a new orbit opens. */
   anyWagered?: boolean;
+  /** Completed orbits in a row where nobody wagered; a wager resets it. */
+  passOrbits?: number;
 }
+
+/** Consecutive all-pass orbits before the hand ends and the pot carries. */
+const MAX_PASS_ORBITS = 3;
 
 function vs(hand: HandState): InBetweenState {
   return hand.vstate as InBetweenState;
@@ -155,7 +162,9 @@ export const inBetween: GameVariant = {
     for (const id of hand.inHand) {
       hand.playerCards[id] = { cards: [], faceUp: [] };
     }
-    vs(hand).anyWagered = false;
+    const st = vs(hand);
+    st.anyWagered = false;
+    st.passOrbits = 0;
     const first = firstTurnPlayer(v);
     if (!first) return { kind: 'showdown' };
     dealTurn(v, first);
@@ -165,9 +174,13 @@ export const inBetween: GameVariant = {
   nextPhase(v): PhasePlan {
     const hand = v.hand;
     const st = vs(hand);
-    // Pot gone, or a full orbit of passes: the hand is over. resolve() below
-    // returns an empty result; the engine carries any leftover pot.
-    if (hand.pot === 0 || !st.anyWagered) return { kind: 'showdown' };
+    // Pot gone: the hand is over. resolve() below returns an empty result.
+    if (hand.pot === 0) return { kind: 'showdown' };
+    // Idle-table backstop: the third consecutive all-pass orbit ends the
+    // hand and the engine carries the leftover pot.
+    if (st.anyWagered) st.passOrbits = 0;
+    else if ((st.passOrbits = (st.passOrbits ?? 0) + 1) >= MAX_PASS_ORBITS)
+      return { kind: 'showdown' };
     st.anyWagered = false;
     const first = firstTurnPlayer(v);
     if (!first) return { kind: 'showdown' };
