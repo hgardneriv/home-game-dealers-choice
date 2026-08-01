@@ -32,8 +32,18 @@ function declare(t: Table, playerId: string, choice: 'in' | 'out') {
   return t.apply({ type: 'variantMove', playerId, move: { kind: 'declare', choice } });
 }
 
-/** Everyone still to act declares `choice`, in turn order. */
+/** Check every seat through the pre-declare betting street. */
+function checkAround(t: Table) {
+  let guard = 0;
+  while (t.state.phase === 'playing' && t.hand.round.kind === 'betting') {
+    if (guard++ > 12) throw new Error('betting street did not close');
+    t.act(t.toAct!, 'check');
+  }
+}
+
+/** Check through the betting street, then everyone declares `choice` in turn. */
 function declareAll(t: Table, choice: 'in' | 'out' = 'in') {
+  checkAround(t);
   for (const id of [...t.hand.inHand]) {
     if (t.state.phase !== 'playing') break;
     declare(t, id, choice);
@@ -132,22 +142,26 @@ describe('evaluator3', () => {
 // ---------------------------------------------------------------------------
 
 describe('hand flow', () => {
-  it('deals three down cards to everyone and opens the declare street', () => {
+  it('deals three down cards and opens the betting street ahead of the declares', () => {
     const t = gutsTable();
     expect(t.hand.variant).toBe('guts');
-    expect(t.hand.round).toMatchObject({ kind: 'exchange', street: 'declare' });
+    expect(t.hand.round).toMatchObject({ kind: 'betting', street: 'bet' });
     for (const id of ['p0', 'p1', 'p2']) {
       expect(t.hand.playerCards[id].cards).toHaveLength(3);
       expect(t.hand.playerCards[id].faceUp).toEqual([false, false, false]);
     }
     expect(t.hand.board).toEqual([]);
     expect(t.hand.deckPos).toBe(9);
-    expect(t.toAct).toBe('p1'); // left of the dealer declares first
+    expect(t.toAct).toBe('p1'); // left of the dealer acts first on every street
+    checkAround(t);
+    expect(t.hand.round).toMatchObject({ kind: 'exchange', street: 'declare' });
+    expect(t.toAct).toBe('p1'); // ...and declares first too
     expect(t.totalChips()).toBe(60);
   });
 
   it('offers exactly the declare move, with timeout defaulting to out', () => {
     const t = gutsTable();
+    checkAround(t);
     expect(getLegalActions(t.state, 'p1')).toEqual({
       kind: 'exchange',
       moves: [{ kind: 'declare' }],
@@ -157,6 +171,7 @@ describe('hand flow', () => {
 
   it('declares are public as they happen and run in turn order', () => {
     const t = gutsTable(4); // order [p1, p2, p3, p0]
+    checkAround(t);
     declare(t, 'p1', 'in');
     let ev = t.state.events.filter((e) => e.type === 'declared').at(-1)!;
     expect(ev.data).toEqual({ playerId: 'p1', choice: 'in' });
@@ -197,6 +212,7 @@ describe('hand flow', () => {
 describe('everyone drops', () => {
   it('the last undeclared player takes the pot WITHOUT declaring', () => {
     const t = gutsTable();
+    checkAround(t);
     declare(t, 'p1', 'out');
     expect(t.totalChips()).toBe(60);
     declare(t, 'p2', 'out');
@@ -213,6 +229,7 @@ describe('everyone drops', () => {
 
   it('all-out is impossible: the hand ends at 1 remaining, before the last declare', () => {
     const t = gutsTable(2); // order [p1, p0]
+    checkAround(t);
     declare(t, 'p1', 'out');
     expect(t.state.phase).toBe('hand-over'); // p0 already won
     expect(t.stack('p0')).toBe(21);
@@ -226,6 +243,7 @@ describe('everyone drops', () => {
 
   it('a lone IN player among droppers wins without showdown or matching', () => {
     const t = gutsTable(); // order [p1, p2, p0]
+    checkAround(t);
     declare(t, 'p1', 'out');
     declare(t, 'p2', 'in');
     declare(t, 'p0', 'out');
@@ -246,6 +264,7 @@ describe('everyone drops', () => {
     t.nextHand();
     expect(t.hand.pot).toBe(6);
     const before = t.stack('p1');
+    checkAround(t);
     declare(t, 'p2', 'out');
     declare(t, 'p0', 'out');
     expect(t.state.phase).toBe('hand-over');
@@ -355,6 +374,7 @@ describe('pot matching', () => {
 describe('timeout and validation', () => {
   it('timing out on the declare auto-declares OUT and marks the player away', () => {
     const t = gutsTable();
+    checkAround(t);
     t.now = t.hand.round.actionDeadline! + t.state.players['p1'].timeBankMs + 1;
     t.apply({ type: 'timeout' }); // arms the time bank first
     t.now = t.hand.round.actionDeadline! + 1;
@@ -369,6 +389,7 @@ describe('timeout and validation', () => {
 
   it('rejects declares out of turn and non-declare moves', () => {
     const t = gutsTable();
+    checkAround(t);
     expectError(
       t.tryApply({ type: 'variantMove', playerId: 'p2', move: { kind: 'declare', choice: 'in' } }),
       'not-your-turn'
@@ -390,8 +411,73 @@ describe('timeout and validation', () => {
 
   it('betting moves are rejected during the declare round', () => {
     const t = gutsTable();
+    checkAround(t);
     expectError(t.tryAct('p1', 'check'), 'illegal-move');
     expectError(t.tryAct('p1', 'bet', 5), 'illegal-move');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pre-declare betting round (house rule 2026-08-01)
+// ---------------------------------------------------------------------------
+
+describe('pre-declare betting round', () => {
+  it('deal opens a check-or-bet street; checking around reaches the declares', () => {
+    const t = gutsTable();
+    expect(t.hand.round).toMatchObject({ kind: 'betting', street: 'bet' });
+    expect(t.toAct).toBe('p1'); // left of the dealer, like every street
+    const legal = getLegalActions(t.state, 'p1')!;
+    expect(legal).toMatchObject({ kind: 'betting', canCheck: true, canBet: true });
+    checkAround(t);
+    expect(t.hand.round).toMatchObject({ kind: 'exchange', street: 'declare' });
+    expect(t.toAct).toBe('p1');
+  });
+
+  it('a bet must be called to declare; folders sit out the declare walk', () => {
+    const t = gutsTable();
+    t.act('p1', 'bet', 4);
+    t.act('p2', 'fold');
+    t.act('p0', 'call');
+    expect(t.hand.round).toMatchObject({ kind: 'exchange', street: 'declare' });
+    expect(t.hand.folded).toContain('p2');
+    declare(t, 'p1', 'in');
+    expect(t.toAct).toBe('p0'); // straight past folded p2
+  });
+
+  it('losers match the RAISED pot — betting escalates the stakes', () => {
+    const t = gutsTable(3, { ante: 2 }, [40, 40, 40]);
+    t.rig({
+      p1: ['Qs', 'Qd', 'Qh'], // trips — wins
+      p2: ['9s', '9d', '4h'],
+      p0: ['2c', '7d', '5s'],
+    });
+    // Antes 6; p1 bets 4, both call — pot 18.
+    t.act('p1', 'bet', 4);
+    t.act('p2', 'call');
+    t.act('p0', 'call');
+    declare(t, 'p1', 'in');
+    declare(t, 'p2', 'in');
+    declare(t, 'p0', 'out');
+    expect(t.state.phase).toBe('hand-over');
+    expect(t.stack('p1')).toBe(52); // 40 - 2 - 4 + 18
+    expect(t.stack('p2')).toBe(16); // 40 - 2 - 4 - 18 matched
+    expect(t.stack('p0')).toBe(34); // 40 - 2 - 4, out — bet is dead money
+    expect(t.state.carryPot).toBe(18); // the match seeds the next pot
+    expect(t.totalChips()).toBe(120);
+  });
+
+  it('everyone folding to a bet is a fold-win: no declares, no matching', () => {
+    const t = gutsTable();
+    t.act('p1', 'bet', 4);
+    t.act('p2', 'fold');
+    t.act('p0', 'fold');
+    expect(t.state.phase).toBe('hand-over');
+    expect(t.stack('p1')).toBe(22); // 20 - 1 ante + 3 antes; uncalled bet back
+    expect(t.state.carryPot).toBe(0);
+    const types = t.state.events.map((e) => e.type);
+    expect(types).not.toContain('declared');
+    expect(types).not.toContain('pot-matched');
+    expect(t.totalChips()).toBe(60);
   });
 });
 
@@ -428,10 +514,42 @@ describe('bot policy', () => {
     return guts.bot.decideExchange!(v, zeroRand);
   }
 
-  it('decideBet is a check stub (guts has no betting rounds)', () => {
-    expect(guts.bot.decideBet(view(['As', 'Kd', '2h'], 3, 20), zeroRand)).toEqual({
+  /** A betting-round view: open action or facing a bet of `callAmount`. */
+  function betView(
+    hole: string[],
+    potTotal: number,
+    stack: number,
+    callAmount = 0,
+    personality: Partial<BotPersonality> = {}
+  ): BotView {
+    return {
+      ...view(hole, potTotal, stack, personality),
+      legal: {
+        kind: 'betting',
+        canFold: true,
+        canCheck: callAmount === 0,
+        callAmount,
+        canBet: callAmount === 0,
+        canRaise: callAmount > 0,
+        minRaiseTo: callAmount === 0 ? 2 : callAmount + 2,
+        maxRaiseTo: stack,
+      },
+    };
+  }
+
+  it('betting brain: strong hands bet when checked to, junk checks behind', () => {
+    const strong = guts.bot.decideBet(betView(['Qs', 'Qd', 'Qh'], 6, 20), zeroRand);
+    expect(strong.move).toBe('bet');
+    expect(strong.amount).toBeGreaterThanOrEqual(2);
+    expect(guts.bot.decideBet(betView(['7s', '4d', '2h'], 6, 20), zeroRand)).toEqual({
       move: 'check',
     });
+  });
+
+  it('betting brain: junk folds to a bet, a monster continues', () => {
+    expect(guts.bot.decideBet(betView(['7s', '4d', '2h'], 10, 20, 4), zeroRand).move).toBe('fold');
+    const monster = guts.bot.decideBet(betView(['Qs', 'Qd', 'Qh'], 10, 20, 4), zeroRand);
+    expect(['call', 'raise']).toContain(monster.move);
   });
 
   it('gutsStrength orders hands sensibly', () => {

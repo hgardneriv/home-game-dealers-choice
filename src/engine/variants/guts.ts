@@ -6,14 +6,17 @@ import { CATEGORY3, describe3, evaluate3 } from '../evaluator3';
 import { active } from '../betting';
 
 /**
- * Three-card guts: ante, three down cards, one open in-turn declare round
- * (left of the dealer first). Everyone who stays is IN; the best 3-card hand
- * takes the pot and every other IN player matches the pot into the NEXT
- * hand's pot (table stakes — capped at their stack by the engine).
+ * Three-card guts: ante, three down cards, one check-or-bet round (house
+ * rule 2026-08-01: a strong hand can sweeten what losers must match — a bet
+ * must be called to earn the declare; folders are out), then one open
+ * in-turn declare round (left of the dealer first). Everyone who stays is
+ * IN; the best 3-card hand takes the pot and every other IN player matches
+ * the pot into the NEXT hand's pot (table stakes — capped at their stack by
+ * the engine).
  *
- * If all but one player drop, the engine's fold-win fires the moment
- * active() hits 1: the last undeclared player takes the antes plus any
- * carried pot without ever declaring — the correct house outcome. That also
+ * If all but one player drop — in the betting round or the declares — the
+ * engine's fold-win fires the moment active() hits 1: the last player takes
+ * the pot without ever declaring — the correct house outcome. That also
  * makes "everyone out" structurally impossible.
  *
  * Deck math: 6 players × 3 cards = 18 ≤ 52 — always fits.
@@ -64,11 +67,13 @@ export const guts: GameVariant = {
       for (let i = 0; i < 3; i++) cards.push(v.draw());
       v.hand.playerCards[id] = { cards, faceUp: [false, false, false] };
     }
-    return { kind: 'exchange', street: 'declare' };
+    return { kind: 'betting', street: 'bet' };
   },
 
-  nextPhase(): PhasePlan {
-    // The declare round is the only phase; ≥2 IN players go to showdown.
+  nextPhase(v): PhasePlan {
+    // Betting closed → the declares; the declares closed → showdown among
+    // the ≥2 IN players (a lone survivor already fold-won in the engine).
+    if (v.hand.round.street === 'bet') return { kind: 'exchange', street: 'declare' };
     return { kind: 'showdown' };
   },
 
@@ -127,8 +132,40 @@ export const guts: GameVariant = {
   },
 
   bot: {
-    // No betting rounds in guts — the brain lives in decideExchange.
-    decideBet: () => ({ move: 'check' }),
+    /**
+     * The pre-declare betting round. Strength thresholds sit above the
+     * declare threshold band: betting money also inflates what a losing
+     * declare costs, so only clearly-winning hands push. Tuning knobs —
+     * Stryker-excluded category, like every bot policy.
+     */
+    decideBet(view, randInt) {
+      const legal = view.legal;
+      if (legal.kind !== 'betting') return { move: 'check' };
+      const strength = gutsStrength(view.hole);
+      const p = view.personality;
+
+      if (legal.canCheck) {
+        // Flush-or-better bets; aggression widens the range a touch.
+        const betAt = 0.8 - (p.aggression - 0.5) * 0.1;
+        if (legal.canBet && strength >= betAt) {
+          const target = Math.max(legal.minRaiseTo, Math.round(view.potTotal / 2));
+          return { move: 'bet', amount: Math.min(legal.maxRaiseTo, target) };
+        }
+        return { move: 'check' };
+      }
+
+      // Facing a bet: continue only with a hand that will declare IN anyway.
+      const price = legal.callAmount / Math.max(1, view.potTotal + legal.callAmount);
+      const required = Math.min(
+        0.9,
+        0.45 + price * 0.4 + (p.tightness - 0.5) * 0.15 - (p.aggression - 0.5) * 0.1
+      );
+      if (strength < required) return { move: 'fold' };
+      if (legal.canRaise && strength >= 0.92 && randInt(2) === 1) {
+        return { move: 'raise', amount: legal.minRaiseTo };
+      }
+      return { move: 'call' };
+    },
     /**
      * Declare IN when hand strength clears a threshold that scales with the
      * risk (the pot you'd have to match relative to your stack) and the

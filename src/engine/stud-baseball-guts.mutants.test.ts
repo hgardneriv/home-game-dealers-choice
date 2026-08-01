@@ -375,6 +375,11 @@ const GUTS = { enabledVariants: ['guts'] as ['guts'] };
 function gutsTable(players = 3): Table {
   const t = new Table(players, { config: GUTS });
   t.start();
+  // Check through the pre-declare betting street — these scenarios exercise
+  // the declares and the settle.
+  while (t.state.phase === 'playing' && t.hand.round.kind === 'betting') {
+    t.act(t.toAct!, 'check');
+  }
   return t;
 }
 

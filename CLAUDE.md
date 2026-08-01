@@ -168,6 +168,14 @@ animations freeze in screenshots — tool environment, not a bug.
    Collect the NEXT round of play-testing feedback before inventing more.
    Known cosmetic nit spotted in screenshots: 7-card rows on left-edge seats
    clip off narrow portrait screens (baseball) — candidate for next pass.
+   **Guts pre-declare betting round (2026-08-01, user-requested)**: guts'
+   `deal` now opens a standard check-or-bet street (`street: 'bet'`) before
+   the declare round (`nextPhase` branches on the closed round's street).
+   A bet must be called to reach the declares; folders are out; fold-wins,
+   side pots, and the settle's "match what the winner took" all compose
+   from existing plumbing. Guts bots got a real `decideBet` (bet flush+,
+   call/raise by strength vs price — tuning-knob category). Stryker on
+   deal/nextPhase: 25/25.
    **In-between all-pass leash (2026-08-01, user-picked house rule)**: a
    single idle orbit no longer ends the hand — the pot-carry backstop fires
    only after THREE consecutive all-pass orbits (`MAX_PASS_ORBITS`,

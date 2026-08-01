@@ -20,7 +20,7 @@ seats.
 | Texas Hold'em (ante-based) | ✅ Playable |
 | 5-card draw (discard up to 3) | ✅ Playable |
 | 7-card stud (door cards, best board opens) | ✅ Playable |
-| 3-card guts (losers match the pot) | ✅ Playable |
+| 3-card guts (betting round, losers match the pot) | ✅ Playable |
 | Baseball — 7-card no-peek, 3s & 9s wild | ✅ Playable |
 | In-between (ace call, pay double on the post) | ✅ Playable |
 
@@ -48,8 +48,19 @@ Live gameplay on a phone (screenshots from the production table):
 - **Table stakes.** You can never lose more than your stack — including in the
   pot-matching games (guts, in-between). Matched pots and unfinished in-between
   pots ride into the next hand, whatever game the next dealer calls.
+- **Guts opens with a betting round.** After the three cards land, one
+  check-or-bet street runs before the declares: a strong hand can sweeten what
+  losers must match, and a bet must be called to earn the right to declare —
+  folders are out of the hand.
+- **In-between plays the pot down.** A pass burns no card, broke players sit
+  out instead of being dealt dead turns, and the hand runs until the pot is
+  emptied — it only carries to the next hand after three straight orbits where
+  nobody wagers.
 - **Top-ups.** Busted players can re-buy on a decaying schedule (host-configurable;
   disabled in quick play).
+- **Bot games end with you.** In a table of bots (quick play), the game is over
+  the moment the last human busts with no re-buy left — you get the standings,
+  not a bot-only spectator mode.
 
 ## Features
 
