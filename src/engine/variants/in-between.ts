@@ -66,9 +66,19 @@ function vs(hand: HandState): InBetweenState {
   return hand.vstate as InBetweenState;
 }
 
-/** First active player in hand order — who opens an orbit (matches nextToAct(hand, null)). */
-function firstTurnPlayer(hand: HandState): string | null {
-  return hand.inHand.find((id) => !hand.folded.includes(id)) ?? null;
+/**
+ * First active player WITH CHIPS in hand order — who opens an orbit. Broke
+ * players sit out (their only wager is 0); this runs before the round exists,
+ * so it must apply the same stack filter that sitsOut gives the engine —
+ * openRound's pre-settle then makes nextToAct(hand, null) agree.
+ */
+function firstTurnPlayer(v: VariantCtx): string | null {
+  const hand = v.hand;
+  return (
+    hand.inHand.find(
+      (id) => !hand.folded.includes(id) && v.state.players[id].stack > 0
+    ) ?? null
+  );
 }
 
 /**
@@ -146,7 +156,7 @@ export const inBetween: GameVariant = {
       hand.playerCards[id] = { cards: [], faceUp: [] };
     }
     vs(hand).anyWagered = false;
-    const first = firstTurnPlayer(hand);
+    const first = firstTurnPlayer(v);
     if (!first) return { kind: 'showdown' };
     dealTurn(v, first);
     return { kind: 'exchange', street: 'in-between' };
@@ -159,7 +169,7 @@ export const inBetween: GameVariant = {
     // returns an empty result; the engine carries any leftover pot.
     if (hand.pot === 0 || !st.anyWagered) return { kind: 'showdown' };
     st.anyWagered = false;
-    const first = firstTurnPlayer(hand);
+    const first = firstTurnPlayer(v);
     if (!first) return { kind: 'showdown' };
     dealTurn(v, first);
     return { kind: 'exchange', street: 'in-between' };
@@ -177,6 +187,10 @@ export const inBetween: GameVariant = {
   },
 
   exchange: {
+    // A broke player's only legal wager is 0 — no decision, no turn.
+    sitsOut: (state: GameState, playerId: string) =>
+      state.players[playerId].stack === 0,
+
     legal(state: GameState, playerId: string): ExchangeLegal {
       const hand = state.hand!;
       if (vs(hand).awaitingAce) {

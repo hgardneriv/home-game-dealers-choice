@@ -111,6 +111,14 @@ export interface GameVariant {
   exchange?: {
     legal(state: GameState, playerId: string): ExchangeLegal;
     /**
+     * Active players with NO decision this exchange round (in-between: a
+     * broke player's only wager is 0). The engine pre-marks them as acted
+     * when the round opens, so they are never dealt a turn or prompted.
+     * Omit for games where every active player takes exchange turns (draw
+     * games: an all-in player still draws).
+     */
+    sitsOut?(state: GameState, playerId: string): boolean;
+    /**
      * Apply a move. `turnContinues: true` keeps the same player to act with a
      * fresh clock (multi-step turns: ace call then wager; repeated flips).
      */

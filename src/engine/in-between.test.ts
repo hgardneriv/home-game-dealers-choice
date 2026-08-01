@@ -179,17 +179,14 @@ describe('outcomes and chip movement', () => {
     expect(t.hand.allIn).toContain('p1');
     expect(lastResult(t)).toMatchObject({ outcome: 'post', amount: 4, potAfter: 10 });
     expect(t.totalChips()).toBe(86);
-    // p1 still takes turns but can only pass (max 0).
+    // Broke p1 sits out from here — orbits run over the solvent players only.
     passTurn(t); // p2
     passTurn(t); // p0 -> orbit 2 opens (p1 wagered this orbit)
     expect(t.state.phase).toBe('playing');
-    expect(t.toAct).toBe('p1');
-    expect(getLegalActions(t.state, 'p1')).toMatchObject({
-      moves: [{ kind: 'wager', min: 0, max: 0 }],
-    });
-    passTurn(t);
-    passTurn(t);
-    passTurn(t); // all-pass orbit ends the hand
+    expect(t.toAct).toBe('p2'); // straight past p1
+    expect(getLegalActions(t.state, 'p1')).toBeNull();
+    passTurn(t); // p2
+    passTurn(t); // p0 -> all-pass orbit ends the hand
     expect(t.state.phase).toBe('hand-over');
     expect(t.state.carryPot).toBe(10);
     expect(t.state.players['p1'].status).toBe('busted');

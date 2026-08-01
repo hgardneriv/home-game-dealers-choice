@@ -50,5 +50,16 @@ export function buildPots(hand: HandState): BuiltPots {
     if (amount > 0) pots.push({ amount, eligible });
     prev = level;
   }
+
+  // Folded chips above the top contesting level are dead money with no layer
+  // of their own. Unreachable in pure betting games (someone always remains
+  // at the top level), but baseball's bust-out folds a player who ran out of
+  // cards even while all-in. Bet and forfeited → the top pot, never dropped.
+  let dead = 0;
+  for (const id of ids) dead += Math.max(0, (totals[id] ?? 0) - prev);
+  if (dead > 0) {
+    if (pots.length > 0) pots[pots.length - 1].amount += dead;
+    else pots.push({ amount: dead, eligible: contesting });
+  }
   return { refunds, pots };
 }

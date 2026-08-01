@@ -763,9 +763,18 @@ function freshRound(
 function openRound(m: Mutable, plan: { kind: 'betting' | 'exchange'; street: string }): void {
   const hand = m.state.hand!;
   hand.round = freshRound(m.state.config, plan.kind, plan.street);
+  const variant = getVariant(hand.variant);
+  // Players the variant declares decision-less this round (in-between: broke
+  // players can only wager 0) start pre-settled — nextToAct walks past them,
+  // and the variant's own turn-dealing honors actedSinceFullRaise.
+  const sitsOut = variant.exchange?.sitsOut;
+  if (plan.kind === 'exchange' && sitsOut) {
+    for (const id of active(hand)) {
+      if (sitsOut(m.state, id)) hand.round.actedSinceFullRaise.push(id);
+    }
+  }
   // Default opener is left of the button; a variant may override (stud's
   // "highest board showing acts first").
-  const variant = getVariant(hand.variant);
   hand.round.toAct = variant.firstToAct
     ? variant.firstToAct(m.state, hand)
     : nextToAct(hand, null);

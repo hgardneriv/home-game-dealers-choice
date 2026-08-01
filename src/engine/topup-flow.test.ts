@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Table, expectError, NOW } from './test-utils';
 import { dueSweepAction } from '../server/sweep';
-import { getLegalActions } from './betting';
 
 /**
  * Scenario tests for the top-up (rebuy) flow: the re-entry hold window that
@@ -365,35 +364,20 @@ describe('bot games end when the humans are out', () => {
     expect((ended!.data as { winnerId: string }).winnerId).toBe(b2);
   });
 
-  /** In-between: everyone all-in at the ante can only pass; the orbit ends the hand. */
-  function passOrbit(t: Table): void {
-    let guard = 0;
-    while (t.state.phase === 'playing') {
-      if (guard++ > 10) throw new Error('pass orbit did not end');
-      const id = t.toAct!;
-      const legal = getLegalActions(t.state, id)!;
-      if (legal.kind === 'exchange' && legal.moves[0].kind === 'aceCall') {
-        t.apply({ type: 'variantMove', playerId: id, move: { kind: 'aceCall', high: true } });
-      }
-      t.apply({ type: 'variantMove', playerId: id, move: { kind: 'wager', amount: 0 } });
-    }
-  }
-
   const IB_BROKE = { enabledVariants: ['in-between'] as ['in-between'], ante: 2, topUps: 0 };
 
   it('everyone at zero (in-between carry) ends a bot game with no winner', () => {
-    // Both players ante their last chips into the communal pot and can only
-    // pass — the hand ends with every stack at zero and the pot carried, so
-    // there is no chip leader to crown.
+    // Both players ante their last chips into the communal pot — nobody can
+    // wager, so the hand resolves ON THE DEAL with every stack at zero and
+    // the pot carried: no chip leader to crown, no dead pass orbit to sit
+    // through (broke players are skipped entirely).
     const t = new Table(1, { config: IB_BROKE });
     t.apply({ type: 'addBot', byId: 'p0' });
     const botId = t.state.seats[1]!;
     t.state.players['p0'].stack = 2;
     t.state.players[botId].stack = 2;
     t.start();
-    expect(t.stack('p0')).toBe(0); // whole stack anted
 
-    passOrbit(t);
     expect(t.state.phase).toBe('ended');
     expect(t.state.endedReason).toBe('humansOut');
     const ended = t.state.events.find((e) => e.type === 'game-ended');
@@ -414,7 +398,6 @@ describe('bot games end when the humans are out', () => {
     t.state.players['p1'].stack = 2;
     t.start();
 
-    passOrbit(t);
     expect(t.state.phase).toBe('ended');
     expect(t.state.endedReason).toBe('lastPlayer');
   });

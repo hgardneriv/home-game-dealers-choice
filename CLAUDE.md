@@ -168,6 +168,18 @@ animations freeze in screenshots — tool environment, not a bug.
    Collect the NEXT round of play-testing feedback before inventing more.
    Known cosmetic nit spotted in screenshots: 7-card rows on left-edge seats
    clip off narrow portrait screens (baseball) — candidate for next pass.
+   **In-between broke-player skip (2026-08-01, play-test bug)**: a player who
+   lost their whole stack mid-hand used to be dealt a dead pass-only turn
+   every orbit until the hand ended. Now `GameVariant.exchange.sitsOut`
+   (engine consults it in `openRound` for EXCHANGE plans only, pre-seeding
+   `actedSinceFullRaise`) plus a stack filter in in-between's
+   `firstTurnPlayer` skip them entirely; all-broke tables resolve on the
+   deal. Draw games unaffected (no sitsOut → all-in players still draw).
+   Fixing it exposed a PRE-EXISTING `buildPots` leak (fuzz seed 19):
+   folded chips above the top contesting level were dropped — reachable
+   only via baseball's bust-out (a fold while all-in); dead money now joins
+   the top pot. Tests: `in-between-allin.test.ts`, pots dead-money suite;
+   scoped Stryker 100% except two proven-equivalent `dead > 0` guards.
    **Bot-game auto-end (2026-08-01, user-requested)**: when bots are seated
    and no human can play another hand (every human busted with no rebuy
    left — instant in quick play's `topUps: 0`), `finishHand` ends the game
