@@ -13,9 +13,11 @@ mixed-game nights and a host-ends-long-games path. Browser-verified per game.
 
 ## Deployment (live)
 
-- **Production:** https://home-game-dealers-choice.vercel.app — Vercel project
-  `home-game-dealers-choice`, team `hgardnerivs-projects`; deploy with
+- **Production:** https://home-game-dealers-choice.vercel.app — deploy with
   `vercel deploy --prod` (CLI-based, never git-triggered; run tests first).
+  Project/team targeting comes from the gitignored `.vercel/` link (`vercel
+  link` once per checkout) — keep Vercel account identifiers out of tracked
+  files.
 - Env (values in Vercel, never the repo): `SESSION_SECRET` (fresh per project),
   `KV_REST_API_URL` / `KV_REST_API_TOKEN`. ⚠️ Values must be UNQUOTED — a
   quoted URL pasted from an env file produces "invalid URL" 500s at runtime.

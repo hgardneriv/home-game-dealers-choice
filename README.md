@@ -111,8 +111,9 @@ Required env in production: `SESSION_SECRET`, plus `KV_REST_API_URL` /
 
 ## Deploy
 
-Deployed on Vercel (project `home-game-dealers-choice`, team `hgardnerivs-projects`);
-deploys are CLI-based, never git-triggered:
+Deployed on Vercel; deploys are CLI-based, never git-triggered. The target
+project and team come from the gitignored `.vercel/` link — run `vercel link`
+once in a fresh checkout, then:
 
 ```bash
 vercel deploy --prod
