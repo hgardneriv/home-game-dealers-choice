@@ -168,6 +168,13 @@ animations freeze in screenshots — tool environment, not a bug.
    Collect the NEXT round of play-testing feedback before inventing more.
    Known cosmetic nit spotted in screenshots: 7-card rows on left-edge seats
    clip off narrow portrait screens (baseball) — candidate for next pass.
+   **Bot-game auto-end (2026-08-01, user-requested)**: when bots are seated
+   and no human can play another hand (every human busted with no rebuy
+   left — instant in quick play's `topUps: 0`), `finishHand` ends the game
+   with `endedReason: 'humansOut'` and crowns the chip-leader bot, instead
+   of making the human watch bots finish. A human with a top-up remaining
+   still holds the table open. Engine `humansAreDone()` + GameOverScreen
+   "Out of chips — game over" copy; tests in `topup-flow.test.ts`.
 2. Bot tuning from play-testing (personality constants in `bot.ts` +
    per-variant strength/policy functions — all deliberately Stryker-excluded
    tuning knobs). Note: in-between bots still bet by spread only.

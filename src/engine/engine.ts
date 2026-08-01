@@ -931,6 +931,14 @@ function finishHand(
     }
   }
 
+  // A bot table folds up the moment its last human busts with no rebuy left —
+  // nobody wants to watch the bots finish the night without them.
+  if (humansAreDone(state)) {
+    const leader = chippedPlayers(state).sort((a, b) => b.stack - a.stack)[0];
+    endGame(m, leader?.id ?? null, 'humansOut');
+    return;
+  }
+
   // 'holding' returns too: the extended rebuy deadline must not be overwritten
   // by the normal between-hands delay below (and the hold outranks a pending
   // pause — pauseAfterHand stays set for the next completed hand).
@@ -952,6 +960,20 @@ function finishHand(
 function chippedPlayers(state: GameState): Player[] {
   return Object.values(state.players).filter(
     (p) => p.seat !== null && p.stack > 0 && p.status !== 'kicked' && p.status !== 'left'
+  );
+}
+
+/**
+ * True when bots are seated but no human can play another hand: every human
+ * is busted (or gone) with no top-up left. A human who can still rebuy keeps
+ * the table open — the normal hold-window/next-hand flow covers them.
+ */
+function humansAreDone(state: GameState): boolean {
+  const botsSeated = Object.values(state.players).some((p) => p.isBot && p.seat !== null);
+  if (!botsSeated) return false;
+  return (
+    !chippedPlayers(state).some((p) => !p.isBot) &&
+    !eligibleRebuyers(state).some((p) => !p.isBot)
   );
 }
 
@@ -993,7 +1015,7 @@ function settleOrHold(m: Mutable): 'ended' | 'holding' | 'normal' {
 function endGame(
   m: Mutable,
   winnerId: string | null,
-  reason: 'host' | 'lastPlayer' = 'lastPlayer'
+  reason: 'host' | 'lastPlayer' | 'humansOut' = 'lastPlayer'
 ): void {
   const { state } = m;
   // Chips owed to a next hand that will never come: split evenly among the

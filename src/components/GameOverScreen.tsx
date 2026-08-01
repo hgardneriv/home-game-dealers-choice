@@ -23,11 +23,15 @@ export function GameOverScreen({ state }: { state: ClientGameState }) {
         className="flex w-full max-w-md flex-col items-center gap-6"
       >
         <div className="text-center">
-          <div className="text-5xl">{state.endedReason === 'host' ? '🛑' : '🏆'}</div>
+          <div className="text-5xl">
+            {state.endedReason === 'host' ? '🛑' : state.endedReason === 'humansOut' ? '💸' : '🏆'}
+          </div>
           <h1 className="mt-3 text-2xl font-bold">
             {state.endedReason === 'host'
               ? 'The host ended the game'
-              : `${winner?.name ?? 'Someone'} takes it all!`}
+              : state.endedReason === 'humansOut'
+                ? 'Out of chips — game over'
+                : `${winner?.name ?? 'Someone'} takes it all!`}
           </h1>
           <p className="mt-1 text-sm text-white/60">
             Final count after {state.hand ? `${state.hand.handNo} hands` : 'the session'} · buy-in

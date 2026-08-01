@@ -267,6 +267,94 @@ describe('bot auto-top-up via the sweep', () => {
   });
 });
 
+describe('bot games end when the humans are out', () => {
+  /** Host + two deep-stacked bots; button seat 0, so bots act first. */
+  function soloVsBots(config: Partial<Table['state']['config']> = {}): {
+    t: Table;
+    b1: string;
+    b2: string;
+  } {
+    const t = new Table(1, { config });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    const [b1, b2] = t.state.seats.slice(1, 3) as [string, string];
+    // Deep bots: they survive calling the human's shove, so without the
+    // humans-out rule the game would keep dealing to them.
+    t.state.players[b1].stack = 100;
+    t.state.players[b2].stack = 100;
+    t.start();
+    return { t, b1, b2 };
+  }
+
+  /** Human shoves junk into b1's aces, b2 folds → human busts, bots chipped. */
+  function bustTheHuman(t: Table, b1: string, b2: string): void {
+    t.rig(
+      { p0: ['2c', '7d'], [b1]: ['As', 'Ah'], [b2]: ['Ks', 'Kd'] },
+      ['4h', '9s', 'Jd', 'Qc', '6h']
+    );
+    t.act(b1, 'check');
+    t.act(b2, 'check');
+    t.act('p0', 'bet', 19); // all-in over the ante
+    t.act(b1, 'call');
+    t.act(b2, 'fold');
+    expect(t.state.players['p0'].status).toBe('busted');
+  }
+
+  it('quick play (topUps 0): the solo human busting ends the game instantly', () => {
+    const { t, b1, b2 } = soloVsBots({ topUps: 0 });
+    bustTheHuman(t, b1, b2);
+
+    // Both bots could still play — the game ends anyway, chip leader crowned.
+    expect(t.state.players[b1].stack).toBeGreaterThan(0);
+    expect(t.state.players[b2].stack).toBeGreaterThan(0);
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.endedReason).toBe('humansOut');
+    const ended = t.state.events.find((e) => e.type === 'game-ended');
+    expect((ended!.data as { winnerId: string }).winnerId).toBe(b1);
+  });
+
+  it('a human with a top-up left keeps the bot table open', () => {
+    const { t, b1, b2 } = soloVsBots(); // default schedule: rebuys available
+    bustTheHuman(t, b1, b2);
+
+    expect(t.state.phase).toBe('hand-over');
+    expect(t.state.endedReason).toBeNull();
+    t.topUp('p0');
+    expect(t.state.players['p0'].status).toBe('seated');
+  });
+
+  it('the same bust with the rebuy schedule spent ends the game', () => {
+    const { t, b1, b2 } = soloVsBots();
+    t.state.players['p0'].topUpsUsed = 2;
+    bustTheHuman(t, b1, b2);
+
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.endedReason).toBe('humansOut');
+  });
+
+  it('another chipped human keeps the game going after one busts', () => {
+    const t = new Table(2, { config: { topUps: 0 } });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    const botId = t.state.seats[2]!;
+    t.state.players[botId].stack = 100;
+    t.state.players['p0'].stack = 100;
+    t.start();
+
+    // Button seat 0 → p1 acts first and shoves junk into p0's aces.
+    t.rig(
+      { p0: ['As', 'Ah'], p1: ['2c', '7d'], [botId]: ['Ks', 'Kd'] },
+      ['4h', '9s', 'Jd', 'Qc', '6h']
+    );
+    t.act('p1', 'bet', 19);
+    t.act(botId, 'fold');
+    t.act('p0', 'call');
+
+    expect(t.state.players['p1'].status).toBe('busted');
+    expect(t.state.phase).toBe('hand-over'); // p0 + bot still play on
+    expect(t.state.endedReason).toBeNull();
+  });
+});
+
 describe('chip conservation with top-ups', () => {
   it('total chips always equal the sum of every buy-in', () => {
     const t = new Table(2);

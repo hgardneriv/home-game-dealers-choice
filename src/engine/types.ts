@@ -200,7 +200,7 @@ export interface GameState {
   /** Host asked to pause; takes effect when the current hand ends. */
   pauseAfterHand: boolean;
   /** Why the game ended (set when phase becomes 'ended'). */
-  endedReason: 'host' | 'lastPlayer' | null;
+  endedReason: 'host' | 'lastPlayer' | 'humansOut' | null;
   /** Ring buffer of recent events, cap 100. */
   events: GameEvent[];
   eventSeq: number;
