@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Table, expectError, NOW } from './test-utils';
 import { dueSweepAction } from '../server/sweep';
+import { getLegalActions } from './betting';
 
 /**
  * Scenario tests for the top-up (rebuy) flow: the re-entry hold window that
@@ -330,6 +331,92 @@ describe('bot games end when the humans are out', () => {
 
     expect(t.state.phase).toBe('ended');
     expect(t.state.endedReason).toBe('humansOut');
+  });
+
+  it('the crowned bot is the chip leader, not the first seat', () => {
+    const t = new Table(1, { config: { topUps: 0 } });
+    for (let i = 0; i < 3; i++) t.apply({ type: 'addBot', byId: 'p0' });
+    const [b1, b2, b3] = t.state.seats.slice(1, 4) as [string, string, string];
+    t.state.players[b1].stack = 60;
+    t.state.players[b2].stack = 200;
+    t.state.players[b3].stack = 150;
+    t.start();
+
+    t.rig(
+      { p0: ['2c', '7d'], [b1]: ['3c', '8d'], [b2]: ['As', 'Ah'], [b3]: ['5c', 'Td'] },
+      ['4h', '9s', 'Jd', 'Qc', '6h']
+    );
+    t.act(b1, 'check');
+    t.act(b2, 'check');
+    t.act(b3, 'check');
+    t.act('p0', 'bet', 19);
+    t.act(b1, 'fold');
+    t.act(b2, 'call');
+    t.act(b3, 'fold');
+
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.endedReason).toBe('humansOut');
+    // b2 ends richest but sits BETWEEN b1 and b3 in seat order, and the three
+    // stacks are distinct — an unsorted or reversed leader pick crowns a
+    // different bot.
+    expect(t.stack(b2)).toBeGreaterThan(t.stack(b3));
+    expect(t.stack(b3)).toBeGreaterThan(t.stack(b1));
+    const ended = t.state.events.find((e) => e.type === 'game-ended');
+    expect((ended!.data as { winnerId: string }).winnerId).toBe(b2);
+  });
+
+  /** In-between: everyone all-in at the ante can only pass; the orbit ends the hand. */
+  function passOrbit(t: Table): void {
+    let guard = 0;
+    while (t.state.phase === 'playing') {
+      if (guard++ > 10) throw new Error('pass orbit did not end');
+      const id = t.toAct!;
+      const legal = getLegalActions(t.state, id)!;
+      if (legal.kind === 'exchange' && legal.moves[0].kind === 'aceCall') {
+        t.apply({ type: 'variantMove', playerId: id, move: { kind: 'aceCall', high: true } });
+      }
+      t.apply({ type: 'variantMove', playerId: id, move: { kind: 'wager', amount: 0 } });
+    }
+  }
+
+  const IB_BROKE = { enabledVariants: ['in-between'] as ['in-between'], ante: 2, topUps: 0 };
+
+  it('everyone at zero (in-between carry) ends a bot game with no winner', () => {
+    // Both players ante their last chips into the communal pot and can only
+    // pass — the hand ends with every stack at zero and the pot carried, so
+    // there is no chip leader to crown.
+    const t = new Table(1, { config: IB_BROKE });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    const botId = t.state.seats[1]!;
+    t.state.players['p0'].stack = 2;
+    t.state.players[botId].stack = 2;
+    t.start();
+    expect(t.stack('p0')).toBe(0); // whole stack anted
+
+    passOrbit(t);
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.endedReason).toBe('humansOut');
+    const ended = t.state.events.find((e) => e.type === 'game-ended');
+    expect((ended!.data as { winnerId: string | null }).winnerId).toBeNull();
+    // endGame split the carried pot back so the standings add up.
+    expect(t.state.carryPot).toBe(0);
+    expect(t.stack('p0') + t.stack(botId)).toBe(4);
+  });
+
+  it('the same all-human wipeout ends as lastPlayer, not humansOut', () => {
+    const t = new Table(2, { config: IB_BROKE });
+    // A bot that joined and left: its unseated record must not count as
+    // "bots seated" for the humans-out rule.
+    t.apply({ type: 'addBot', byId: 'p0' });
+    const ghost = t.state.seats[2]!;
+    t.apply({ type: 'removeBot', byId: 'p0', playerId: ghost });
+    t.state.players['p0'].stack = 2;
+    t.state.players['p1'].stack = 2;
+    t.start();
+
+    passOrbit(t);
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.endedReason).toBe('lastPlayer');
   });
 
   it('another chipped human keeps the game going after one busts', () => {
