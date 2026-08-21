@@ -11,6 +11,7 @@ import { InviteButton } from './InviteButton';
 import { HistoryDrawer } from './HistoryDrawer';
 import { ToastProvider, useToast } from './Toast';
 import { GameOverScreen } from './GameOverScreen';
+import { DrawSelectProvider } from './DrawSelect';
 import type { GameApi } from '@/hooks/useGame';
 
 /** Announces table events (players leaving/being kicked) to everyone else. */
@@ -189,6 +190,7 @@ export function GameRoom({ gameId }: { gameId: string }) {
 
   return (
     <ToastProvider>
+      <DrawSelectProvider game={game}>
       <EventNotices game={game} />
       <main className="relative flex h-dvh flex-col bg-zinc-950">
         <header className="flex items-center justify-between gap-2 px-4 py-2 text-sm text-white">
@@ -212,6 +214,7 @@ export function GameRoom({ gameId }: { gameId: string }) {
         <HostPanel game={game} />
         <ActionBar game={game} />
       </main>
+      </DrawSelectProvider>
     </ToastProvider>
   );
 }

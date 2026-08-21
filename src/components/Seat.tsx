@@ -6,6 +6,7 @@ import type { GameApi } from '@/hooks/useGame';
 import { getVariant } from '@/engine/variants/registry';
 import { handLabel } from '@/engine/hand-label';
 import { PlayingCard } from './PlayingCard';
+import { useDrawSelect } from './DrawSelect';
 
 export function Seat({
   game,
@@ -64,6 +65,8 @@ export function Seat({
 
   const variant = hand ? getVariant(hand.variant) : null;
   const isWildCard = (card: string) => variant?.wildRanks?.includes(card[0]) ?? false;
+  const draw = useDrawSelect();
+  const pickingDraw = isYou && draw.active && !!showCards;
 
   // Casino-machine courtesy: name any made hand as it develops. Everyone sees
   // a label built from this seat's FACE-UP cards; you additionally see one
@@ -79,10 +82,12 @@ export function Seat({
       // Your own folded seat stays a bit more legible so you can read your cards.
       animate={{ opacity: folded ? (isYou ? 0.65 : 0.45) : 1 }}
       // Your seat gets an ornate gold-trimmed plaque; opponents stay compact.
-      className={`flex w-max min-w-24 max-w-36 flex-col items-center sm:max-w-48 ${
-        isYou
+      className={`flex w-max min-w-24 max-w-36 flex-col items-center overflow-visible sm:max-w-48 ${
+        isYou && !pickingDraw
           ? 'rounded-xl border border-amber-400/50 bg-black/40 px-2 pb-1 pt-2 shadow-[0_0_0_3px_rgba(0,0,0,0.35),inset_0_0_0_2px_rgba(216,180,92,0.15),0_4px_14px_rgba(0,0,0,0.45)]'
-          : ''
+          : isYou && pickingDraw
+            ? 'px-2 pb-1 pt-2'
+            : ''
       }`}
     >
       {/* Cards peeking above the plate. After folding, you (and only you)
@@ -90,9 +95,13 @@ export function Seat({
           Face-up cards (yours, or anyone's at showdown) sit fully clear of
           the plate so the bottom index isn't cut off; face-down backs tuck. */}
       <div
-        className={`z-0 flex ${
-          Math.max(cardCount, showCards?.length ?? 0) > 2 ? '-space-x-3' : 'gap-0.5'
-        } ${showCards ? 'mb-1' : '-mb-2'} ${folded ? 'opacity-70 grayscale' : ''}`}
+        className={`z-0 flex overflow-visible ${
+          pickingDraw
+            ? 'w-max shrink-0 -translate-y-2 -space-x-2'
+            : Math.max(cardCount, showCards?.length ?? 0) > 2
+              ? '-space-x-3'
+              : 'gap-0.5'
+        } ${showCards ? 'mb-1' : '-mb-2'} ${folded && !pickingDraw ? 'opacity-70 grayscale' : ''}`}
       >
         {inHand && !folded && !showCards && (
           <>
@@ -106,24 +115,47 @@ export function Seat({
         )}
         {inHand && showCards && (!folded || isYou) && (
           <>
-            {showCards.map((card, i) => (
-              <PlayingCard
-                key={card}
-                card={card}
-                size={isYou ? 'md' : 'sm'}
-                dealt
-                wild={isWildCard(card)}
-                // Shade your own table-hidden cards so you always know which
-                // of your cards the others can't see — but only when the hand
-                // MIXES up and down cards (stud). In all-down games (hold'em,
-                // draw, guts) every card is hidden and the tag is just noise.
-                facedown={
-                  isYou &&
-                  !!hand?.myFaceUp?.includes(true) &&
-                  hand?.myFaceUp?.[i] === false
-                }
-              />
-            ))}
+            {showCards.map((card, i) => {
+              const cardEl = (
+                <PlayingCard
+                  key={`${card}-${i}`}
+                  card={card}
+                  size={pickingDraw ? 'lg' : isYou ? 'md' : 'sm'}
+                  dealt={!pickingDraw}
+                  wild={isWildCard(card)}
+                  // Shade your own table-hidden cards so you always know which
+                  // of your cards the others can't see — but only when the hand
+                  // MIXES up and down cards (stud). In all-down games (hold'em,
+                  // draw, guts) every card is hidden and the tag is just noise.
+                  facedown={
+                    isYou &&
+                    !!hand?.myFaceUp?.includes(true) &&
+                    hand?.myFaceUp?.[i] === false
+                  }
+                />
+              );
+              if (!pickingDraw) return cardEl;
+              const on = draw.selected.includes(i);
+              return (
+                <button
+                  key={`${card}-${i}`}
+                  type="button"
+                  className={`relative rounded-md transition ${
+                    on ? '-translate-y-3 ring-2 ring-amber-400' : 'opacity-95'
+                  }`}
+                  onClick={() => draw.toggle(i)}
+                  aria-pressed={on}
+                  aria-label={on ? `Keep ${card}` : `Discard ${card}`}
+                >
+                  {cardEl}
+                  {on && (
+                    <span className="absolute inset-x-0 -bottom-0.5 text-center text-[9px] font-bold uppercase tracking-wide text-amber-300">
+                      swap
+                    </span>
+                  )}
+                </button>
+              );
+            })}
             {/* No-peek: your flipped cards plus backs for the rest. */}
             {isYou &&
               Array.from({ length: Math.max(0, cardCount - showCards.length) }).map((_, i) => (

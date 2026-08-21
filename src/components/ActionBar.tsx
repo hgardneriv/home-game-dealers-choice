@@ -6,7 +6,7 @@ import { topUpAmount } from '@/engine/topup';
 import { getVariant } from '@/engine/variants/registry';
 import { useToast } from './Toast';
 import { LeaveButton } from './LeaveButton';
-import { PlayingCard } from './PlayingCard';
+import { useDrawSelect } from './DrawSelect';
 
 export function ActionBar({ game }: { game: GameApi }) {
   const toast = useToast();
@@ -18,8 +18,8 @@ export function ActionBar({ game }: { game: GameApi }) {
 
   const [raiseTo, setRaiseTo] = useState<number | null>(null);
   const [showSizing, setShowSizing] = useState(false);
-  const [selected, setSelected] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
+  const draw = useDrawSelect();
 
   // Reset the sizing/discard UI when the turn context changes
   // (adjust-during-render).
@@ -29,7 +29,6 @@ export function ActionBar({ game }: { game: GameApi }) {
     setPrevTurnKey(turnKey);
     setShowSizing(false);
     setRaiseTo(null);
-    setSelected([]);
     setBusy(false);
   }
 
@@ -303,12 +302,7 @@ export function ActionBar({ game }: { game: GameApi }) {
     }
 
     const spec = legal.moves.find((mv) => mv.kind === 'discard');
-    const myCards = hand.myCards ?? [];
     const max = spec?.kind === 'discard' ? spec.max : 0;
-    const toggle = (i: number) =>
-      setSelected((prev) =>
-        prev.includes(i) ? prev.filter((x) => x !== i) : prev.length < max ? [...prev, i] : prev
-      );
     const submitDraw = async (indexes: number[]) => {
       if (busy) return;
       setBusy(true);
@@ -319,28 +313,8 @@ export function ActionBar({ game }: { game: GameApi }) {
     return (
       <div className="sticky bottom-0 flex flex-col gap-2 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <span className="text-center text-sm font-semibold text-amber-300">
-          🂠 Your draw — tap up to {max} cards to swap
+          🂠 Your draw — tap cards on the table to swap (up to {max})
         </span>
-        <div className="flex items-center justify-center gap-1.5">
-          {myCards.map((card, i) => (
-            <button
-              key={`${card}-${i}`}
-              className={`rounded-md transition ${
-                selected.includes(i)
-                  ? '-translate-y-2 ring-2 ring-amber-400'
-                  : 'opacity-95'
-              }`}
-              onClick={() => toggle(i)}
-              aria-pressed={selected.includes(i)}
-            >
-              <PlayingCard
-                card={card}
-                size="sm"
-                wild={getVariant(hand.variant).wildRanks?.includes(card[0]) ?? false}
-              />
-            </button>
-          ))}
-        </div>
         <div className="flex gap-2">
           {leave}
           <button
@@ -352,10 +326,10 @@ export function ActionBar({ game }: { game: GameApi }) {
           </button>
           <button
             className="flex-1 rounded-xl bg-emerald-700 px-3 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
-            disabled={busy || selected.length === 0}
-            onClick={() => submitDraw(selected)}
+            disabled={busy || draw.selected.length === 0}
+            onClick={() => submitDraw(draw.selected)}
           >
-            Discard {selected.length || ''}
+            Discard {draw.selected.length || ''}
           </button>
         </div>
       </div>
