@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { Table, expectError, NOW } from './test-utils';
+import { Table, expectError, NOW, REBUY_CONFIG } from './test-utils';
 import { dueSweepAction } from '../server/sweep';
+
+/** Tables that exercise rebuys — product default is now 0 (off). */
+function rebuyTable(
+  n: number,
+  opts: ConstructorParameters<typeof Table>[1] = {}
+): Table {
+  return new Table(n, { ...opts, config: { ...REBUY_CONFIG, ...opts.config } });
+}
 
 /**
  * Scenario tests for the top-up (rebuy) flow: the re-entry hold window that
@@ -23,7 +31,7 @@ function bustP1HeadsUp(t: Table): void {
 
 describe('re-entry hold window', () => {
   it('a game-deciding bust holds the table open instead of ending', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     t.start();
     bustP1HeadsUp(t);
 
@@ -35,7 +43,7 @@ describe('re-entry hold window', () => {
   });
 
   it('topping up in the window revives the game and shortens the wait', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     t.start();
     bustP1HeadsUp(t);
 
@@ -57,7 +65,7 @@ describe('re-entry hold window', () => {
   });
 
   it('topUps: 0 preserves the old instant game-over', () => {
-    const t = new Table(2, { config: { topUps: 0 } });
+    const t = rebuyTable(2, { config: { topUps: 0 } });
     t.start();
     t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
     t.act('p1', 'bet', 19); // all-in over the ante
@@ -67,7 +75,7 @@ describe('re-entry hold window', () => {
   });
 
   it('an expired window settles to game over with the right winner', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     t.start();
     bustP1HeadsUp(t);
 
@@ -78,7 +86,7 @@ describe('re-entry hold window', () => {
   });
 
   it('a late topUp after the window expired is rejected', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     t.start();
     bustP1HeadsUp(t);
     t.nextHand();
@@ -88,7 +96,7 @@ describe('re-entry hold window', () => {
 
 describe('topUp validation', () => {
   it('rejects players who still have chips, strangers, and lobby-phase calls', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     expectError(t.tryTopUp('p0'), 'bad-phase'); // lobby
     t.start();
     expectError(t.tryTopUp('p0'), 'illegal-move'); // has chips
@@ -96,7 +104,7 @@ describe('topUp validation', () => {
   });
 
   it('rejects once the schedule is exhausted', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     t.start();
     for (let rebuy = 0; rebuy < 2; rebuy++) {
       // p1's stack varies per cycle; whoever opens shoves whatever they have.
@@ -122,7 +130,7 @@ describe('topUp validation', () => {
   });
 
   it('a busted spectator can top up mid-hand without touching the live hand', () => {
-    const t = new Table(3, { stacks: [50, 50, 4] });
+    const t = rebuyTable(3, { stacks: [50, 50, 4] });
     t.start(); // button 0, order p1, p2, p0; antes leave p2 with 3
     t.rig({ p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
     t.act('p1', 'check');
@@ -162,7 +170,7 @@ describe('multi-bust and leave interactions', () => {
   }
 
   it('two simultaneous busts hold one window; either can revive the game', () => {
-    const t = new Table(3);
+    const t = rebuyTable(3);
     t.start();
     bustTwo(t);
     expect(t.state.phase).toBe('hand-over');
@@ -176,7 +184,7 @@ describe('multi-bust and leave interactions', () => {
   });
 
   it('a rebuyer leaving during the window settles the game immediately', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     t.start();
     bustP1HeadsUp(t);
     t.apply({ type: 'leave', playerId: 'p1' });
@@ -186,7 +194,7 @@ describe('multi-bust and leave interactions', () => {
   });
 
   it('the last chipped opponent leaving opens a window for a seated rebuyer', () => {
-    const t = new Table(3, { stacks: [50, 50, 4] });
+    const t = rebuyTable(3, { stacks: [50, 50, 4] });
     t.start();
     t.rig({ p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
     t.act('p1', 'check');
@@ -203,7 +211,7 @@ describe('multi-bust and leave interactions', () => {
   });
 
   it('pause-after-hand yields to the hold window but sticks around', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     t.start();
     t.apply({ type: 'pause', byId: 'p0' }); // mid-hand → pauseAfterHand
     expect(t.state.pauseAfterHand).toBe(true);
@@ -215,7 +223,7 @@ describe('multi-bust and leave interactions', () => {
 
 describe('bot auto-top-up via the sweep', () => {
   function tableWithBot(): { t: Table; botId: string } {
-    const t = new Table(1);
+    const t = rebuyTable(1);
     t.apply({ type: 'addBot', byId: 'p0' });
     const botId = Object.keys(t.state.players).find((id) => id !== 'p0')!;
     t.start();
@@ -274,7 +282,7 @@ describe('bot games end when the humans are out', () => {
     b1: string;
     b2: string;
   } {
-    const t = new Table(1, { config });
+    const t = rebuyTable(1, { config });
     t.apply({ type: 'addBot', byId: 'p0' });
     t.apply({ type: 'addBot', byId: 'p0' });
     const [b1, b2] = t.state.seats.slice(1, 3) as [string, string];
@@ -333,7 +341,7 @@ describe('bot games end when the humans are out', () => {
   });
 
   it('the crowned bot is the chip leader, not the first seat', () => {
-    const t = new Table(1, { config: { topUps: 0 } });
+    const t = rebuyTable(1, { config: { topUps: 0 } });
     for (let i = 0; i < 3; i++) t.apply({ type: 'addBot', byId: 'p0' });
     const [b1, b2, b3] = t.state.seats.slice(1, 4) as [string, string, string];
     t.state.players[b1].stack = 60;
@@ -371,7 +379,7 @@ describe('bot games end when the humans are out', () => {
     // wager, so the hand resolves ON THE DEAL with every stack at zero and
     // the pot carried: no chip leader to crown, no dead pass orbit to sit
     // through (broke players are skipped entirely).
-    const t = new Table(1, { config: IB_BROKE });
+    const t = rebuyTable(1, { config: IB_BROKE });
     t.apply({ type: 'addBot', byId: 'p0' });
     const botId = t.state.seats[1]!;
     t.state.players['p0'].stack = 2;
@@ -388,7 +396,7 @@ describe('bot games end when the humans are out', () => {
   });
 
   it('the same all-human wipeout ends as lastPlayer, not humansOut', () => {
-    const t = new Table(2, { config: IB_BROKE });
+    const t = rebuyTable(2, { config: IB_BROKE });
     // A bot that joined and left: its unseated record must not count as
     // "bots seated" for the humans-out rule.
     t.apply({ type: 'addBot', byId: 'p0' });
@@ -403,7 +411,7 @@ describe('bot games end when the humans are out', () => {
   });
 
   it('another chipped human keeps the game going after one busts', () => {
-    const t = new Table(2, { config: { topUps: 0 } });
+    const t = rebuyTable(2, { config: { topUps: 0 } });
     t.apply({ type: 'addBot', byId: 'p0' });
     const botId = t.state.seats[2]!;
     t.state.players[botId].stack = 100;
@@ -427,7 +435,7 @@ describe('bot games end when the humans are out', () => {
 
 describe('chip conservation with top-ups', () => {
   it('total chips always equal the sum of every buy-in', () => {
-    const t = new Table(2);
+    const t = rebuyTable(2);
     t.start();
     bustP1HeadsUp(t);
     t.topUp('p1');

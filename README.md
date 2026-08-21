@@ -56,8 +56,8 @@ Live gameplay on a phone (screenshots from the production table):
   out instead of being dealt dead turns, and the hand runs until the pot is
   emptied — it only carries to the next hand after three straight orbits where
   nobody wagers.
-- **Top-ups.** Busted players can re-buy on a decaying schedule (host-configurable;
-  disabled in quick play).
+- **Top-ups.** Off by default; the host can allow a decaying rebuy schedule
+  (disabled in quick play).
 - **Bot games end with you.** In a table of bots (quick play), the game is over
   the moment the last human busts with no re-buy left — you get the standings,
   not a bot-only spectator mode.

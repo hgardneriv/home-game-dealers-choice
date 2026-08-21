@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Table, expectError, NOW } from './test-utils';
+import { Table, expectError, NOW, REBUY_CONFIG } from './test-utils';
 import { normalizeConfig } from './engine';
 import type { EngineResult, GameEvent, GameState } from './types';
 
@@ -56,12 +56,14 @@ describe('config normalization', () => {
     const cfg = normalizeConfig({ startingStack: NaN, actionTimeMs: NaN });
     expect(cfg.startingStack).toBe(20);
     expect(cfg.actionTimeMs).toBe(20_000);
+    expect(cfg.topUps).toBe(0);
   });
 
   it('ante defaults to 1; minBet defaults to 2×ante and never sits below the ante', () => {
     const cfg = normalizeConfig({});
     expect(cfg.ante).toBe(1);
     expect(cfg.minBet).toBe(2);
+    expect(cfg.topUps).toBe(0);
     expect(normalizeConfig({ ante: 0 }).ante).toBe(1); // clamp floor
     expect(normalizeConfig({ ante: 5 }).minBet).toBe(10); // 2×ante default
     expect(normalizeConfig({ ante: 5, minBet: 3 }).minBet).toBe(5); // floor = ante
@@ -676,7 +678,7 @@ describe('bot turns and timeouts', () => {
   });
 
   it('a busted bot schedules its auto-rebuy think delay from the RNG', () => {
-    const t = new Table(1);
+    const t = new Table(1, { config: REBUY_CONFIG });
     t.apply({ type: 'addBot', byId: 'p0' });
     const botId = Object.keys(t.state.players).find((id) => id !== 'p0')!;
     t.start();
@@ -692,7 +694,7 @@ describe('bot turns and timeouts', () => {
 
 describe('topUp', () => {
   it('emits topped-up with the amount and remaining count', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     bustP1HeadsUp(t);
     t.topUp('p1');
@@ -701,7 +703,7 @@ describe('topUp', () => {
   });
 
   it('with an exhausted schedule is illegal even while the game continues', () => {
-    const t = new Table(3, { stacks: [50, 50, 4] });
+    const t = new Table(3, { stacks: [50, 50, 4], config: REBUY_CONFIG });
     t.state.players['p2'].topUpsUsed = 2;
     t.start(); // antes: p2 has 3 behind
     t.rig(
@@ -719,7 +721,7 @@ describe('topUp', () => {
   });
 
   it('a mid-hand rebuy never schedules a next hand', () => {
-    const t = new Table(3, { stacks: [50, 50, 4] });
+    const t = new Table(3, { stacks: [50, 50, 4], config: REBUY_CONFIG });
     t.start();
     t.rig(
       { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] },
@@ -741,7 +743,7 @@ describe('topUp', () => {
 
 describe('rebuy window accounting', () => {
   it('a pending (unseated) requester does not count as a live player', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     t.apply({ type: 'requestSeat', playerId: 'px', name: 'Px', seat: 2 });
     bustP1HeadsUp(t);
@@ -753,7 +755,7 @@ describe('rebuy window accounting', () => {
   });
 
   it('the last chipped player leaving mid-window ends the game with no winner', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     bustP1HeadsUp(t);
     t.apply({ type: 'leave', playerId: 'p0' });
@@ -766,7 +768,7 @@ describe('rebuy window accounting', () => {
 
 describe('busting bookkeeping', () => {
   it('an already-busted spectator is not re-busted at later hand ends', () => {
-    const t = new Table(3, { stacks: [50, 50, 4] });
+    const t = new Table(3, { stacks: [50, 50, 4], config: REBUY_CONFIG });
     t.start();
     t.rig(
       { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] },

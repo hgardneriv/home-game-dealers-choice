@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Table, expectError, legalFor, zeroRand } from './test-utils';
+import { Table, expectError, legalFor, zeroRand, REBUY_CONFIG } from './test-utils';
 import { _registerVariantForTest } from './variants/registry';
 import { baseball } from './variants/baseball';
 import { FIVE_OF_A_KIND, beatsVisible, describeWild, evaluateWild } from './evaluator-wild';
@@ -440,7 +440,9 @@ describe('full hand: orbits, busts, and showdown', () => {
 
 describe('all-in interactions', () => {
   it('players all-in during betting still take their flip rounds; betting is skipped', () => {
-    const t = riggedTable();
+    const t = new Table(3, { config: { ...BASEBALL, ...REBUY_CONFIG } });
+    t.start();
+    rig7(t, { p1: P1, p2: P2, p0: P0 });
     flip(t, 'p1');
     t.act('p1', 'bet', 19); // all-in (20 - 1 ante)
     t.act('p2', 'call');

@@ -16,7 +16,7 @@ export function CreateGame() {
   const [ante, setAnte] = useState('1');
   const [minBet, setMinBet] = useState('2');
   const [bots, setBots] = useState('0');
-  const [topUps, setTopUps] = useState('2');
+  const [topUps, setTopUps] = useState('0');
   const [topUpDecay, setTopUpDecay] = useState('50');
   const [enabled, setEnabled] = useState<VariantId[]>([...IMPLEMENTED_VARIANTS]);
   const [busy, setBusy] = useState(false);
@@ -62,7 +62,7 @@ export function CreateGame() {
                   ante: parse(ante, 1),
                   minBet: parse(minBet, 2),
                   enabledVariants: enabled,
-                  topUps: parse0(topUps, 2),
+                  topUps: parse0(topUps, 0),
                   topUpDecayPct: parse0(topUpDecay, 50),
                 },
               }
@@ -120,7 +120,7 @@ export function CreateGame() {
                 { label: 'Computer players', value: bots, set: setBots, placeholder: '0' },
                 { label: 'Ante', value: ante, set: setAnte, placeholder: '1' },
                 { label: 'Minimum bet', value: minBet, set: setMinBet, placeholder: '2' },
-                { label: 'Top-ups per player', value: topUps, set: setTopUps, placeholder: '2' },
+                { label: 'Top-ups per player', value: topUps, set: setTopUps, placeholder: '0' },
                 { label: 'Top-up shrink %', value: topUpDecay, set: setTopUpDecay, placeholder: '50' },
               ] as const
             ).map((f) => (

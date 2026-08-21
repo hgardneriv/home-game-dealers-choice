@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { Table, expectError, NOW } from './test-utils';
+import { Table, expectError, NOW, REBUY_CONFIG } from './test-utils';
 import { defaultVariant, normalizeConfig } from './engine';
 import { _registerVariantForTest } from './variants/registry';
 import type { GameVariant } from './variants/types';
@@ -139,7 +139,7 @@ const drainLosers: GameVariant = {
 
 describe('error messages are exact', () => {
   it('seating and lobby guards', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     expectFail(
       t.tryApply({ type: 'approveSeat', byId: 'p1', playerId: 'x' }),
       'not-host',
@@ -219,7 +219,7 @@ describe('error messages are exact', () => {
       'bad-phase',
       'Need at least 2 players'
     );
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     expectFail(
       t.tryApply({ type: 'startGame', byId: 'p0' }),
@@ -251,7 +251,7 @@ describe('error messages are exact', () => {
   });
 
   it('after-end guards', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.apply({ type: 'endGame', byId: 'p0' });
     expectFail(
       t.tryApply({ type: 'requestSeat', playerId: 'x', name: 'X', seat: 0 }),
@@ -285,7 +285,7 @@ describe('error messages are exact', () => {
   });
 
   it('exhausted top-up schedule while the game continues', () => {
-    const t = new Table(3, { stacks: [50, 50, 4] });
+    const t = new Table(3, { stacks: [50, 50, 4], config: REBUY_CONFIG });
     t.state.players['p2'].topUpsUsed = 2;
     t.start();
     t.rig(
@@ -476,7 +476,7 @@ describe('chooseGame', () => {
 
 describe('defaultVariant', () => {
   it('repeats the previous variant only while it stays enabled', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     t.act('p1', 'fold');
     expect(defaultVariant(t.state)).toBe('holdem');
@@ -487,7 +487,7 @@ describe('defaultVariant', () => {
 
 describe('leaving during the choosing phase', () => {
   it('holds a top-up window instead of dealing on (or ending) when a rebuy could save the game', () => {
-    const t = new Table(3, { config: BOTH, stacks: [50, 50, 4] });
+    const t = new Table(3, { config: { ...BOTH, ...REBUY_CONFIG }, stacks: [50, 50, 4] });
     t.start();
     t.apply({ type: 'chooseGame', playerId: 'p0', variant: 'holdem' });
     t.rig(
@@ -608,7 +608,7 @@ describe('communal pot', () => {
 
 describe('communal pot award to winners', () => {
   it('splits an odd carried pot with the remainder to the first winner clockwise', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.state.carryPot = 5;
     t.start();
     expect(t.hand.pot).toBe(5);
@@ -661,7 +661,7 @@ describe('settle hook', () => {
 function bustEveryone(config: Partial<TableConfig> = {}): Table {
   register(drainAll);
   const t = new Table(2, {
-    config: { enabledVariants: ['guts'], ante: 1, ...config },
+    config: { enabledVariants: ['guts'], ante: 1, ...REBUY_CONFIG, ...config },
     stacks: [20, 21],
   });
   t.start();
@@ -730,7 +730,7 @@ describe('all-busted hold and disbursement', () => {
 describe('single-rebuyer window expiring through beginHand', () => {
   it('ends the game in favor of the surviving player (exact winnerId)', () => {
     register(drainLosers);
-    const t = new Table(2, { config: { enabledVariants: ['guts', 'holdem'], ante: 1 } });
+    const t = new Table(2, { config: { enabledVariants: ['guts', 'holdem'], ante: 1, ...REBUY_CONFIG } });
     t.start();
     t.apply({ type: 'chooseGame', playerId: 'p0', variant: 'guts' });
     t.checkDown();
@@ -779,7 +779,7 @@ describe('endGame disbursement recipients', () => {
   });
 
   it('with no seats occupied the carry falls back to every player, without un-busting the living', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.state.players['p0'].status = 'left';
     t.state.players['p1'].status = 'left';
     t.state.players['p0'].seat = null;
@@ -795,7 +795,7 @@ describe('endGame disbursement recipients', () => {
   });
 
   it('a zero share never un-busts: only recipients who actually receive chips revive', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     for (const id of ['p0', 'p1']) {
       t.state.players[id].status = 'busted';
       t.state.players[id].stack = 0;
@@ -821,7 +821,7 @@ function bustP1(t: Table): void {
 
 describe('topUp guards', () => {
   it('a busted player without a seat cannot top up', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     bustP1(t);
     t.state.seats[1] = null;
@@ -830,7 +830,7 @@ describe('topUp guards', () => {
   });
 
   it('never reschedules when hand-over has no pending next hand', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     bustP1(t);
     t.state.nextHandAt = null;
@@ -839,7 +839,7 @@ describe('topUp guards', () => {
   });
 
   it('never reschedules outside the hand-over phase even with nextHandAt set', () => {
-    const t = new Table(3, { stacks: [50, 50, 4] });
+    const t = new Table(3, { stacks: [50, 50, 4], config: REBUY_CONFIG });
     t.start();
     t.rig(
       { p0: ['As', 'Ah'], p1: ['Kc', 'Kd'], p2: ['2c', '7d'] },
@@ -938,7 +938,7 @@ describe('timeout on exchange rounds', () => {
 
 describe('timeout guards and time bank', () => {
   it('with no deadline on the clock, timeout errors with the exact message', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     t.state.hand!.round.actionDeadline = null;
     expectFail(t.tryApply({ type: 'timeout' }), 'not-expired', 'No one is on the clock');
@@ -961,7 +961,7 @@ describe('timeout guards and time bank', () => {
 
 describe('nextHand guard', () => {
   it('a null nextHandAt in hand-over stays not-expired', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     t.act('p1', 'fold');
     expect(t.state.phase).toBe('hand-over');
@@ -977,7 +977,7 @@ describe('nextHand guard', () => {
 
 describe('imBack guards', () => {
   it('only a LIVE turn gets a fresh clock: outside playing the deadline is untouched', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.start();
     const d0 = t.hand.round.actionDeadline!;
     t.state.players['p1'].status = 'away';
@@ -989,7 +989,7 @@ describe('imBack guards', () => {
   });
 
   it('survives a playing phase with no hand object', () => {
-    const t = new Table(2);
+    const t = new Table(2, { config: REBUY_CONFIG });
     t.state.players['p1'].status = 'away';
     t.state.phase = 'playing';
     const evs = okEvents(t.tryApply({ type: 'imBack', playerId: 'p1' }));

@@ -27,7 +27,7 @@ export interface TableConfig {
   actionTimeMs: number; // default 20_000
   timeBankMs: number; // default 10_000
   maxSeats: number; // 6
-  /** Rebuys allowed per player after busting. 0 disables. Default 2. */
+  /** Rebuys allowed per player after busting. 0 disables. Default 0. */
   topUps: number;
   /** Each successive top-up shrinks by this percent (0 = flat). Default 50. */
   topUpDecayPct: number;

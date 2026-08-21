@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Table, legalFor } from './test-utils';
+import { Table, legalFor, REBUY_CONFIG } from './test-utils';
 import { _registerVariantForTest } from './variants/registry';
 import {
   boardStrength,
@@ -226,7 +226,7 @@ describe('first to act: best showing board', () => {
 
 describe('all-in runout', () => {
   it('skipped betting streets still deal — both hands reach seven cards', () => {
-    const t = new Table(2, { config: { ...STUD, ante: 1, minBet: 2 }, stacks: [20, 5] });
+    const t = new Table(2, { config: { ...STUD, ante: 1, minBet: 2, ...REBUY_CONFIG }, stacks: [20, 5] });
     t.start();
     const first = t.toAct!;
     t.act(first, 'bet', legalFor(t.state, first).maxRaiseTo);

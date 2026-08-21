@@ -6,10 +6,11 @@ import type { TableConfig } from './types';
 const cfg = (over: Partial<TableConfig> = {}): TableConfig => ({ ...DEFAULT_CONFIG, ...over });
 
 describe('topUpAmount', () => {
-  it('default schedule on the $20 stack: $12, then $6, then none', () => {
-    expect(topUpAmount(cfg(), 0)).toBe(12);
-    expect(topUpAmount(cfg(), 1)).toBe(6);
-    expect(topUpAmount(cfg(), 2)).toBe(0); // topUps: 2 exhausted
+  it('enabled schedule on the $20 stack: $12, then $6, then none', () => {
+    const c = cfg({ topUps: 2 });
+    expect(topUpAmount(c, 0)).toBe(12);
+    expect(topUpAmount(c, 1)).toBe(6);
+    expect(topUpAmount(c, 2)).toBe(0); // topUps: 2 exhausted
   });
 
   it('computes each amount from the first, not by iterative re-rounding', () => {
@@ -38,7 +39,7 @@ describe('topUpAmount', () => {
 
   it('tiny games never offer a useless top-up', () => {
     // startingStack 2 (the clamp floor): first = round(1.2) = 1 < minBet 2.
-    const c = normalizeConfig({ startingStack: 2 });
+    const c = normalizeConfig({ startingStack: 2, topUps: 2 });
     expect(topUpAmount(c, 0)).toBe(0);
   });
 
@@ -56,10 +57,10 @@ describe('normalizeConfig top-up fields', () => {
   it('clamps and defaults', () => {
     expect(normalizeConfig({ topUps: -5 }).topUps).toBe(0);
     expect(normalizeConfig({ topUps: 999 }).topUps).toBe(20);
-    expect(normalizeConfig({}).topUps).toBe(2);
+    expect(normalizeConfig({}).topUps).toBe(0);
     expect(normalizeConfig({ topUpDecayPct: -1 }).topUpDecayPct).toBe(0);
     expect(normalizeConfig({ topUpDecayPct: 150 }).topUpDecayPct).toBe(100);
     expect(normalizeConfig({}).topUpDecayPct).toBe(50);
-    expect(normalizeConfig({ topUps: 'x' as unknown as number }).topUps).toBe(2);
+    expect(normalizeConfig({ topUps: 'x' as unknown as number }).topUps).toBe(0);
   });
 });

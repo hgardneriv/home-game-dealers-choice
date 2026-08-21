@@ -25,6 +25,9 @@ export function seededRandInt(seed: number): (maxExclusive: number) => number {
 
 export const NOW = 1_000_000;
 
+/** Host-opt-in rebuy schedule. Product default is 0 (off); tests that exercise top-ups pass this. */
+export const REBUY_CONFIG = { topUps: 2 } as const;
+
 /** Always-zero randInt: first-hand button lands on the lowest eligible seat. */
 export const zeroRand = () => 0;
 

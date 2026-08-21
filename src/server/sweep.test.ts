@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Table } from '@/engine/test-utils';
+import { Table, REBUY_CONFIG } from '@/engine/test-utils';
 import type { GameState, Player } from '@/engine/types';
 import { dueSweepAction } from './sweep';
 
@@ -45,7 +45,7 @@ function botToAct(): { t: Table; botId: string } {
 
 /** Host + bot; the bot busts, opening the top-up window (topUpAt stamped). */
 function bustedBotHandOver(): { t: Table; botId: string } {
-  const t = new Table(1);
+  const t = new Table(1, { config: REBUY_CONFIG });
   t.apply({ type: 'addBot', byId: 'p0' });
   const botId = Object.keys(t.state.players).find((id) => id !== 'p0')!;
   t.start();
@@ -87,7 +87,8 @@ describe('bot top-up: phase gating', () => {
   });
 
   it('fires in playing (busted spectator bot), before any timeout backstop', () => {
-    const t = playingHumans();
+    const t = new Table(2, { config: REBUY_CONFIG });
+    t.start();
     t.state.players.b9 = {
       id: 'b9',
       name: 'Bot 9',

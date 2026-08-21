@@ -36,7 +36,7 @@ export const DEFAULT_CONFIG: TableConfig = {
   actionTimeMs: 20_000,
   timeBankMs: 10_000,
   maxSeats: 6,
-  topUps: 2,
+  topUps: 0,
   topUpDecayPct: 50,
 };
 

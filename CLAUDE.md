@@ -73,8 +73,9 @@ mixed-game nights and a host-ends-long-games path. Browser-verified per game.
   postflop eval + draw awareness) is wired via `holdem.bot.decideBet`;
   `decideForBot` dispatches through the registry and legality-clamps. Defense
   curve: `required = min(0.72, 0.18 + potOdds*0.45 + tightness*0.1)`.
-- **Top-ups**: unchanged from parent except the floor: amounts below `minBet`
-  are never offered (`topup.ts`). Quick play forces `topUps: 0`.
+- **Top-ups**: same as parent except the floor: amounts below `minBet`
+  are never offered (`topup.ts`). Default is 0 (off); the host can raise it.
+  Quick play forces `topUps: 0`.
 - **Storage** (`src/server/kv.ts`, `store.ts`): two Redis keys per game
   (version + state JSON, 24h TTL). ALL mutations flow through `withGame()` →
   read → sweep → user action → Lua-CAS write → retry (max 4).

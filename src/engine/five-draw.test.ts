@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Table, expectError, legalFor } from './test-utils';
+import { Table, expectError, legalFor, REBUY_CONFIG } from './test-utils';
 import { chooseDiscards } from './variants/five-draw';
 import { getLegalActions } from './betting';
 import { redactForPlayer } from '@/server/redact';
@@ -152,7 +152,7 @@ describe('draw validation', () => {
 
 describe('all-in interactions', () => {
   it('a player all-in from the first betting round still draws', () => {
-    const t = new Table(2, { config: { ...DRAW, ante: 1, minBet: 2 }, stacks: [20, 5] });
+    const t = new Table(2, { config: { ...DRAW, ante: 1, minBet: 2, ...REBUY_CONFIG }, stacks: [20, 5] });
     t.start();
     // Order: [p1, p0], button p0. p1 opens shoving 4 (stack 5 - 1 ante).
     t.act('p1', 'bet', 4);

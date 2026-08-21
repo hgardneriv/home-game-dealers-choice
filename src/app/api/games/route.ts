@@ -17,9 +17,10 @@ export async function POST(req: Request): Promise<Response> {
   const config = (
     typeof body.config === 'object' && body.config !== null ? body.config : {}
   ) as Partial<TableConfig>;
-  // Top-ups are a hosted-game feature: quick play stays a fast disposable
-  // session where busting out ends it. Hosted tables use the form config
-  // (and its default of 2), applying to bots and humans alike.
+  // Top-ups are a hosted-game opt-in (form default 0). Quick play stays a
+  // fast disposable session where busting out ends it — force 0 even if a
+  // client sends a config. Hosted tables apply the form value to bots and
+  // humans alike.
   // Quick play also enables every implemented game — the bots don't mind.
   if (quickPlay) {
     config.topUps = 0;
