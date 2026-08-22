@@ -20,7 +20,7 @@ seats.
 | Texas Hold'em (ante-based) | ✅ Playable |
 | 5-card draw (discard up to 3) | ✅ Playable |
 | 7-card stud (door cards, best board opens) | ✅ Playable |
-| 3-card guts (betting round, losers match the pot) | ✅ Playable |
+| 3-card guts (draw up to 2, then a second betting round) | ✅ Playable |
 | Baseball — 7-card no-peek, 3s & 9s wild | ✅ Playable |
 | In-between (ace call, pay double on the post) | ✅ Playable |
 
@@ -45,13 +45,13 @@ Live gameplay on a phone (screenshots from the production table):
   betting is no-limit with a host-set minimum bet (default 2× ante).
 - **The deal rotates** one seat per hand, skipping busted/empty seats. New joiners
   are dealt into the very next hand.
-- **Table stakes.** You can never lose more than your stack — including in the
-  pot-matching games (guts, in-between). Matched pots and unfinished in-between
-  pots ride into the next hand, whatever game the next dealer calls.
-- **Guts opens with a betting round.** After the three cards land, one
-  check-or-bet street runs before the declares: a strong hand can sweeten what
-  losers must match, and a bet must be called to earn the right to declare —
-  folders are out of the hand.
+- **Table stakes.** You can never lose more than your stack — including in
+  in-between, where leftover pots ride into the next hand whatever game the
+  next dealer calls.
+- **Guts is 3-card draw.** After the three cards land: a betting street, a
+  discard of up to two cards (same tap-to-swap as five-card draw), a second
+  betting street, then showdown on the best 3-card hand. Folders sit out
+  the draw. There is no in/out declare and no pot matching.
 - **In-between plays the pot down.** A pass burns no card, broke players sit
   out instead of being dealt dead turns, and the hand runs until the pot is
   emptied — it only carries to the next hand after three straight orbits where

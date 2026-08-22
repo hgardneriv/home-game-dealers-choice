@@ -50,7 +50,7 @@ mixed-game nights and a host-ends-long-games path. Browser-verified per game.
   layoutHint/minPlayers/fitsPlayers), `deal`, `nextPhase` (returns
   `PhasePlan = {kind: 'betting'|'exchange', street} | {kind:'showdown'}`),
   `score`/`describeScore`, optional `exchange` (draw/declare/flip moves via
-  `VariantMoveInput`), optional `settle` (pot-matching for guts/in-between,
+  `VariantMoveInput`), optional `settle` (pot-matching for in-between,
   capped at table stakes), and `bot.decideBet`/`decideExchange`. State stores
   only `hand.variant` (JSON-safe); the engine resolves modules via
   `variants/registry.ts` (`IMPLEMENTED_VARIANTS`, `getVariant`,
@@ -171,14 +171,15 @@ animations freeze in screenshots — tool environment, not a bug.
    Collect the NEXT round of play-testing feedback before inventing more.
    Known cosmetic nit spotted in screenshots: 7-card rows on left-edge seats
    clip off narrow portrait screens (baseball) — candidate for next pass.
-   **Guts pre-declare betting round (2026-08-01, user-requested)**: guts'
-   `deal` now opens a standard check-or-bet street (`street: 'bet'`) before
-   the declare round (`nextPhase` branches on the closed round's street).
-   A bet must be called to reach the declares; folders are out; fold-wins,
-   side pots, and the settle's "match what the winner took" all compose
-   from existing plumbing. Guts bots got a real `decideBet` (bet flush+,
-   call/raise by strength vs price — tuning-knob category). Stryker on
-   deal/nextPhase: 25/25.
+   **Guts is 3-card draw (2026-08-22, user-requested)**: same street
+   pattern as five-card draw — deal 3 → bet → discard 0–2 → second bet →
+   showdown. No in/out declare, no pot-matching settle. Discard plumbing
+   and tap-to-swap UI are shared with five-draw (`DrawSelect`,
+   `cards-drawn` events). The draw street also offers **fold** (drop
+   instead of standing/drawing; timeout still stands pat). Bot
+   `chooseDiscards` stands on flush+, keeps a pair, draws to a two-flush
+   or two-card straight, otherwise keeps the high card. `decideBet` uses
+   `decideFromStrength` + `gutsStrength`.
    **In-between all-pass leash (2026-08-01, user-picked house rule)**: a
    single idle orbit no longer ends the hand — the pot-carry backstop fires
    only after THREE consecutive all-pass orbits (`MAX_PASS_ORBITS`,
@@ -209,7 +210,7 @@ animations freeze in screenshots — tool environment, not a bug.
    per-variant strength/policy functions — all deliberately Stryker-excluded
    tuning knobs). Note: in-between bots still bet by spread only.
 3. House-rule toggles parked for later: baseball pay-for-3 / extra-card-on-4,
-   draw 4-with-an-ace, guts secret simultaneous declares, dedicated Redis
+   draw 4-with-an-ace, dedicated Redis
    resource if game nights hit the shared free-plan limits.
 4. **Opt-in voice chat** (parked, feasibility assessed 2026-07-30 — see
    `docs/voice-chat-feasibility.md`): Discord-style table talk for human

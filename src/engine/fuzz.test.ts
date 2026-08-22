@@ -68,14 +68,17 @@ function randomExchangeMove(
   const spec = legal.moves[randInt(legal.moves.length)];
   switch (spec.kind) {
     case 'discard': {
-      const count = randInt(spec.max + 1);
-      const pool = [0, 1, 2, 3, 4];
+      const holeLen = state.hand?.playerCards[playerId]?.cards.length ?? 0;
+      const count = randInt(Math.min(spec.max, holeLen) + 1);
+      const pool = Array.from({ length: holeLen }, (_, i) => i);
       const cardIndexes: number[] = [];
       for (let i = 0; i < count; i++) {
         cardIndexes.push(pool.splice(randInt(pool.length), 1)[0]);
       }
       return { kind: 'discard', cardIndexes };
     }
+    case 'fold':
+      return { kind: 'fold' };
     case 'declare':
       return { kind: 'declare', choice: randInt(2) === 0 ? 'in' : 'out' };
     case 'flip':

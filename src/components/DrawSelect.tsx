@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import type { GameApi } from '@/hooks/useGame';
 
 interface DrawSelectValue {
-  /** True when it's your five-card-draw discard turn. */
+  /** True when it's your discard turn (five-card draw or three-card guts). */
   active: boolean;
   selected: number[];
   max: number;

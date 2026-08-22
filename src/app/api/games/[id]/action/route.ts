@@ -11,6 +11,8 @@ function parseVariantMove(body: Record<string, unknown>): VariantMoveInput | nul
       const cardIndexes = raw.filter((n): n is number => Number.isInteger(n)).slice(0, 10);
       return { kind: 'discard', cardIndexes };
     }
+    case 'fold':
+      return { kind: 'fold' };
     case 'declare': {
       const choice = String(body.choice ?? '');
       return choice === 'in' || choice === 'out' ? { kind: 'declare', choice } : null;

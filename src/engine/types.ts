@@ -219,8 +219,9 @@ export type PlayerMove = 'fold' | 'check' | 'call' | 'bet' | 'raise';
  * engine routes them to the hand's variant module for validation/application.
  */
 export type VariantMoveInput =
-  | { kind: 'discard'; cardIndexes: number[] } // five-card draw
-  | { kind: 'declare'; choice: 'in' | 'out' } // guts
+  | { kind: 'discard'; cardIndexes: number[] } // five-card draw / guts
+  | { kind: 'fold' } // guts draw street — drop instead of standing/drawing
+  | { kind: 'declare'; choice: 'in' | 'out' }
   | { kind: 'flip' } // no-peek/baseball
   | { kind: 'wager'; amount: number } // in-between; 0 = pass
   | { kind: 'aceCall'; high: boolean }; // in-between first-card ace
@@ -288,6 +289,7 @@ export interface BettingLegal {
 /** What a variant move may look like right now, for rendering and validation. */
 export type VariantMoveSpec =
   | { kind: 'discard'; min: number; max: number }
+  | { kind: 'fold' }
   | { kind: 'declare' }
   | { kind: 'flip' }
   | { kind: 'wager'; min: number; max: number }

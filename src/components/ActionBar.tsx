@@ -302,6 +302,7 @@ export function ActionBar({ game }: { game: GameApi }) {
     }
 
     const spec = legal.moves.find((mv) => mv.kind === 'discard');
+    const canFoldDraw = legal.moves.some((mv) => mv.kind === 'fold');
     const max = spec?.kind === 'discard' ? spec.max : 0;
     const submitDraw = async (indexes: number[]) => {
       if (busy) return;
@@ -317,6 +318,15 @@ export function ActionBar({ game }: { game: GameApi }) {
         </span>
         <div className="flex gap-2">
           {leave}
+          {canFoldDraw && (
+            <button
+              className="flex-1 rounded-xl bg-red-700 px-3 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
+              disabled={busy}
+              onClick={() => submitMove({ kind: 'fold' })}
+            >
+              Fold
+            </button>
+          )}
           <button
             className="flex-1 rounded-xl bg-zinc-600 px-3 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
             disabled={busy}

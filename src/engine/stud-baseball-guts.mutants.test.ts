@@ -367,7 +367,7 @@ describe('baseball rules', () => {
 });
 
 // ---------------------------------------------------------------------------
-// guts: declare validation, events, settle
+// guts: discard validation, events, no pot-match
 // ---------------------------------------------------------------------------
 
 const GUTS = { enabledVariants: ['guts'] as ['guts'] };
@@ -375,16 +375,14 @@ const GUTS = { enabledVariants: ['guts'] as ['guts'] };
 function gutsTable(players = 3): Table {
   const t = new Table(players, { config: GUTS });
   t.start();
-  // Check through the pre-declare betting street — these scenarios exercise
-  // the declares and the settle.
   while (t.state.phase === 'playing' && t.hand.round.kind === 'betting') {
     t.act(t.toAct!, 'check');
   }
   return t;
 }
 
-function declare(t: Table, playerId: string, choice: 'in' | 'out') {
-  return t.apply({ type: 'variantMove', playerId, move: { kind: 'declare', choice } });
+function discard(t: Table, playerId: string, cardIndexes: number[]) {
+  return t.apply({ type: 'variantMove', playerId, move: { kind: 'discard', cardIndexes } });
 }
 
 describe('guts rules', () => {
@@ -395,59 +393,61 @@ describe('guts rules', () => {
     expect(guts.fitsPlayers(7)).toBe(false);
   });
 
-  it('rejects wrong move kinds and bad choices with their exact messages', () => {
+  it('rejects wrong move kinds and oversize discards with their exact messages', () => {
     const t = gutsTable();
     const wrongKind = t.tryApply({
       type: 'variantMove',
       playerId: 'p1',
-      move: { kind: 'discard', cardIndexes: [0] },
+      move: { kind: 'declare', choice: 'in' },
     });
     expect(wrongKind.ok).toBe(false);
     if (!wrongKind.ok) {
-      expect(wrongKind.error.message).toBe('Expected an in/out declaration');
+      expect(wrongKind.error.message).toBe('Expected a discard');
     }
-    const badChoice = t.tryApply({
+    const tooMany = t.tryApply({
       type: 'variantMove',
       playerId: 'p1',
-      move: { kind: 'declare', choice: 'maybe' as 'in' },
+      move: { kind: 'discard', cardIndexes: [0, 1, 2] },
     });
-    expect(badChoice.ok).toBe(false);
-    if (!badChoice.ok) {
-      expect(badChoice.error.message).toBe('Declare in or out');
+    expect(tooMany.ok).toBe(false);
+    if (!tooMany.ok) {
+      expect(tooMany.error.message).toBe('Discard at most 2');
     }
   });
 
-  it('a declare logs an action naming the choice in move and detail', () => {
+  it('a draw logs an action naming the count in move and detail', () => {
     const t = gutsTable();
-    declare(t, 'p1', 'in');
+    discard(t, 'p1', [0]);
     const action = t.state.events.filter((e) => e.type === 'action').at(-1)!.data;
     expect(action).toEqual({
       playerId: 'p1',
-      move: 'declare in',
-      detail: { choice: 'in' },
-      street: 'declare',
+      move: 'draw',
+      detail: { count: 1 },
+      street: 'draw',
       auto: false,
     });
   });
 
-  it('with exactly TWO contenders the loser still matches the pot', () => {
+  it('the winner takes the pot; losers do not match', () => {
     const t = gutsTable();
     t.rig({
       p1: ['2s', '7d', 'Jh'],
       p2: ['9s', '9d', '9h'], // winner
-      p0: ['4c', '8d', 'Qh'], // loser — must match
+      p0: ['4c', '8d', 'Qh'],
     });
-    declare(t, 'p1', 'out');
-    declare(t, 'p2', 'in');
-    declare(t, 'p0', 'in');
+    discard(t, 'p1', []);
+    discard(t, 'p2', []);
+    discard(t, 'p0', []);
+    while (t.state.phase === 'playing' && t.hand.round.kind === 'betting') {
+      t.act(t.toAct!, 'check');
+    }
     expect(t.state.phase).toBe('hand-over');
     expect(t.hand.result!.pots[0]).toMatchObject({ amount: 3, winners: ['p2'] });
     expect(t.stack('p2')).toBe(22); // 20 - 1 ante + 3 pot
-    expect(t.stack('p0')).toBe(16); // 20 - 1 ante - 3 match
-    expect(t.stack('p1')).toBe(19); // dropped: ante only
-    expect(t.state.carryPot).toBe(3);
-    const matched = t.state.events.filter((e) => e.type === 'pot-matched');
-    expect(matched.map((e) => e.data)).toEqual([{ playerId: 'p0', amount: 3 }]);
+    expect(t.stack('p0')).toBe(19);
+    expect(t.stack('p1')).toBe(19);
+    expect(t.state.carryPot).toBe(0);
+    expect(t.state.events.filter((e) => e.type === 'pot-matched')).toHaveLength(0);
     expect(t.totalChips()).toBe(60);
   });
 
