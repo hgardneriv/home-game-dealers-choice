@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Table, expectError, legalFor } from './test-utils';
+import { reviewingLastHand } from './types';
 
 // Default layout with zeroRand: first-hand button lands on the lowest eligible
 // seat (seat 0 = p0). Hand order is clockwise from the button's left with the
@@ -553,6 +554,57 @@ describe('host ends the game', () => {
     expect(t.stack('p1')).toBe(20);
     expect(t.stack('p2')).toBe(20);
     expectError(t.tryApply({ type: 'endGame', byId: 'p0' }), 'bad-phase');
+  });
+});
+
+describe('last-hand results review', () => {
+  /** Heads-up all-in: p1 busts, game ends with a completed last hand. */
+  function lastHandEnds(t: Table): void {
+    t.start();
+    t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
+    t.act('p1', 'bet', 19);
+    t.act('p0', 'call');
+  }
+
+  it('keeps the finished hand so the table can still show the winner', () => {
+    const t = new Table(2, { config: { topUps: 0 } });
+    lastHandEnds(t);
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.endedReason).toBe('lastPlayer');
+    expect(t.state.hand?.result).not.toBeNull();
+    expect(t.state.resultsShown).toBe(false);
+    expect(reviewingLastHand(t.state)).toBe(true);
+  });
+
+  it('showResults is host-only and flips the standings flag', () => {
+    const t = new Table(2, { config: { topUps: 0 } });
+    lastHandEnds(t);
+    expectError(t.tryApply({ type: 'showResults', byId: 'p1' }), 'not-host');
+    expect(t.state.resultsShown).toBe(false);
+    t.apply({ type: 'showResults', byId: 'p0' });
+    expect(t.state.resultsShown).toBe(true);
+    expect(reviewingLastHand(t.state)).toBe(false);
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.hand?.result).not.toBeNull();
+    expectError(t.tryApply({ type: 'showResults', byId: 'p0' }), 'bad-phase');
+  });
+
+  it('showResults is rejected while the game is still going', () => {
+    const t = new Table(2);
+    t.start();
+    expectError(t.tryApply({ type: 'showResults', byId: 'p0' }), 'bad-phase');
+    t.act('p1', 'fold');
+    expect(t.state.phase).toBe('hand-over');
+    expectError(t.tryApply({ type: 'showResults', byId: 'p0' }), 'bad-phase');
+  });
+
+  it('host End game mid-hand still jumps straight to standings (no last hand)', () => {
+    const t = new Table(2);
+    t.start();
+    t.apply({ type: 'endGame', byId: 'p0' });
+    expect(t.state.hand).toBeNull();
+    expect(t.state.resultsShown).toBe(false);
+    expectError(t.tryApply({ type: 'showResults', byId: 'p0' }), 'bad-phase');
   });
 });
 

@@ -7,6 +7,7 @@ import { useOrientation } from '@/hooks/useOrientation';
 import { Seat } from './Seat';
 import { PlayingCard, SUIT_PATH } from './PlayingCard';
 import { getVariant } from '@/engine/variants/registry';
+import { reviewingLastHand } from '@/engine/types';
 
 /**
  * Felt texture: a sparse diagonal tile of dark suit motifs baked into a
@@ -385,10 +386,15 @@ export function Table({ game }: { game: GameApi }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0 }}
             transition={{ delay: 0.35 }}
-            className="absolute left-1/2 z-30 w-max max-w-[86%] -translate-x-1/2 rounded-xl border border-amber-400/40 bg-black/80 px-4 py-2 text-center shadow-xl"
+            className="absolute left-1/2 z-30 flex w-max max-w-[86%] -translate-x-1/2 flex-col items-center rounded-xl border border-amber-400/40 bg-black/80 px-4 py-2 text-center shadow-xl"
             style={{ top: `${CENTER.y + 15}%` }}
           >
             <span className="text-sm font-semibold text-amber-300">🏆 {winnersLine}</span>
+            {reviewingLastHand(state) && (
+              <div className="mt-1 text-xs font-medium text-white/80">
+                Game Over - Tap results to see standings
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

@@ -100,6 +100,7 @@ export function createGame(opts: {
     nextHandAt: null,
     pauseAfterHand: false,
     endedReason: null,
+    resultsShown: false,
     events: [],
     eventSeq: 0,
     createdAt: opts.now,
@@ -446,6 +447,17 @@ export function applyAction(prev: GameState, action: Action, ctx: EngineCtx): En
       state.phase = 'hand-over';
       state.nextHandAt = ctx.now + 1500;
       emit(m, 'resumed', {});
+      return done();
+    }
+
+    case 'showResults': {
+      const notHost = requireHost(action.byId);
+      if (notHost) return notHost;
+      if (state.phase !== 'ended') return fail('bad-phase', 'Game is not over');
+      if (state.resultsShown || !state.hand?.result)
+        return fail('bad-phase', 'Results already shown');
+      state.resultsShown = true;
+      emit(m, 'results-shown', {});
       return done();
     }
 

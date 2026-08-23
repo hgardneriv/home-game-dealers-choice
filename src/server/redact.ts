@@ -37,6 +37,8 @@ export interface ClientGameState {
   nextHandAt: number | null;
   pauseAfterHand: boolean;
   endedReason: 'host' | 'lastPlayer' | 'humansOut' | null;
+  /** Host dismissed the last-hand review (standings are showing). */
+  resultsShown: boolean;
   events: GameEvent[];
   now: number;
 }
@@ -171,6 +173,9 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
     nextHandAt: state.nextHandAt,
     pauseAfterHand: state.pauseAfterHand,
     endedReason: state.endedReason,
+    // Missing on pre-deploy Redis states: treat an already-ended night as
+    // already dismissed so a refresh doesn't bounce standings back to the table.
+    resultsShown: state.resultsShown ?? state.phase === 'ended',
     events: state.events,
     now: Date.now(),
   };

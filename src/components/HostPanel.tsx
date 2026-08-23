@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { GameApi } from '@/hooks/useGame';
+import { reviewingLastHand } from '@/engine/types';
 
 export function HostPanel({ game }: { game: GameApi }) {
   const state = game.state!;
@@ -10,6 +11,8 @@ export function HostPanel({ game }: { game: GameApi }) {
   const [confirmKick, setConfirmKick] = useState<string | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
   if (!me?.isHost) return null;
+  // Results lives in the action bar; don't stack host chrome over the last hand.
+  if (reviewingLastHand(state)) return null;
 
   const requests = state.seatRequests;
   const bots = Object.values(state.players).filter((p) => p.isBot && p.seat !== null);

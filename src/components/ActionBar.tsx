@@ -7,6 +7,7 @@ import { getVariant } from '@/engine/variants/registry';
 import { useToast } from './Toast';
 import { LeaveButton } from './LeaveButton';
 import { useDrawSelect } from './DrawSelect';
+import { reviewingLastHand } from '@/engine/types';
 
 export function ActionBar({ game }: { game: GameApi }) {
   const toast = useToast();
@@ -56,6 +57,43 @@ export function ActionBar({ game }: { game: GameApi }) {
   }, [busted, state.phase, choosing, revealActive]);
 
   const leave = me && !me.isHost ? <LeaveButton game={game} /> : null;
+
+  // Last hand of the night: keep the winner captions up until the host
+  // (or the solo human at a bot table — they are the host) taps Results.
+  // Must beat the busted banner — the human who just busted is often the host.
+  if (reviewingLastHand(state)) {
+    const bar =
+      'sticky bottom-0 flex items-center gap-3 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]';
+    if (me?.isHost) {
+      return (
+        <div className={bar}>
+          <span className="flex-1 text-center text-base font-medium text-white">
+            Last hand - Press Results to continue --&gt;
+          </span>
+          <button
+            className="rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
+            disabled={busy}
+            onClick={async () => {
+              if (busy) return;
+              setBusy(true);
+              const error = await game.hostOp('showResults');
+              if (error) toast(error);
+              setBusy(false);
+            }}
+          >
+            Results
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className={bar}>
+        <span className="flex-1 text-center text-base font-medium text-white/60">
+          Last hand - waiting for the host to continue…
+        </span>
+      </div>
+    );
+  }
 
   if (me && busted) {
     const amount = topUpAmount(state.config, me.topUpsUsed);

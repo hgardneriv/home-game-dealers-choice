@@ -232,6 +232,7 @@ describe('players, lobby state, and top-level fields', () => {
     expect(view.nextHandAt).toBeNull();
     expect(view.pauseAfterHand).toBe(false);
     expect(view.endedReason).toBeNull();
+    expect(view.resultsShown).toBe(false);
     expect(view.events.length).toBeGreaterThan(0);
     expect(view.events).toBe(t.state.events);
     expect(Math.abs(view.now - Date.now())).toBeLessThan(2_000);
@@ -267,5 +268,18 @@ describe('players, lobby state, and top-level fields', () => {
     expect(p.p1.topUpsUsed).toBe(1);
     expect(p.p0.totalBuyIn).toBe(t.state.config.startingStack);
     expect(p.p0.topUpsUsed).toBe(0);
+  });
+
+  it('keeps resultsShown false after a completed last hand, true for legacy ended states', () => {
+    const t = new Table(2, { config: { topUps: 0 } });
+    t.start();
+    t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
+    t.act('p1', 'bet', 19);
+    t.act('p0', 'call');
+    expect(t.state.phase).toBe('ended');
+    expect(redactForPlayer(t.state, 'p0').resultsShown).toBe(false);
+
+    delete (t.state as { resultsShown?: boolean }).resultsShown;
+    expect(redactForPlayer(t.state, 'p0').resultsShown).toBe(true);
   });
 });
