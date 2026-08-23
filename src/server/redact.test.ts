@@ -221,6 +221,7 @@ describe('players, lobby state, and top-level fields', () => {
     expect(view.version).toBe(t.state.version);
     expect(view.phase).toBe('lobby');
     expect(view.hostId).toBe('p0');
+    expect(view.hosted).toBe(true);
     expect(view.config.startingStack).toBe(20);
     expect(view.config.ante).toBe(1);
     expect(view.config.minBet).toBe(2);

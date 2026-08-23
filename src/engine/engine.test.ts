@@ -608,6 +608,92 @@ describe('last-hand results review', () => {
   });
 });
 
+describe('hosted rematch', () => {
+  it('Play again resets the same table to lobby with chips restored', () => {
+    const t = new Table(2, { config: { topUps: 0 } });
+    t.start();
+    t.rig({ p0: ['As', 'Ah'], p1: ['2c', '7d'] }, ['4h', '9s', 'Jd', 'Qc', '6h']);
+    t.act('p1', 'bet', 19);
+    t.act('p0', 'call');
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.players['p1'].status).toBe('busted');
+
+    t.apply({ type: 'playAgain', playerId: 'p1' });
+    expect(t.state.phase).toBe('lobby');
+    expect(t.state.hand).toBeNull();
+    expect(t.state.endedReason).toBeNull();
+    expect(t.state.resultsShown).toBe(false);
+    expect(t.state.hosted).toBe(true);
+    expect(t.state.seats[0]).toBe('p0');
+    expect(t.state.seats[1]).toBe('p1');
+    expect(t.stack('p0')).toBe(20);
+    expect(t.stack('p1')).toBe(20);
+    expect(t.state.players['p0'].status).toBe('seated');
+    expect(t.state.players['p1'].status).toBe('seated');
+    expect(t.state.players['p0'].totalBuyIn).toBe(20);
+    expect(t.state.players['p1'].topUpsUsed).toBe(0);
+    t.apply({ type: 'startGame', byId: 'p0' });
+    expect(t.state.phase).toBe('playing');
+  });
+
+  it('is a no-op once the lobby is already open, and refuses a quick-play table', () => {
+    const t = new Table(2, { config: { topUps: 0 } });
+    t.start();
+    t.apply({ type: 'endGame', byId: 'p0' });
+    t.apply({ type: 'playAgain', playerId: 'p0' });
+    t.apply({ type: 'playAgain', playerId: 'p1' });
+    expect(t.state.phase).toBe('lobby');
+
+    const quick = new Table(2, { config: { topUps: 0 } });
+    quick.state.hosted = false;
+    quick.start();
+    quick.apply({ type: 'endGame', byId: 'p0' });
+    expectError(quick.tryApply({ type: 'playAgain', playerId: 'p0' }), 'bad-phase');
+  });
+
+  it('keeps the hosted setup: top-ups, bots, ante, min-bet, and call sheet', () => {
+    const t = new Table(2, {
+      config: {
+        startingStack: 50,
+        ante: 3,
+        minBet: 6,
+        topUps: 2,
+        topUpDecayPct: 25,
+        enabledVariants: ['guts', 'five-draw'],
+      },
+    });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    const bots = t.state.seats.slice(2, 4) as [string, string];
+    t.start();
+    t.apply({ type: 'endGame', byId: 'p0' });
+    const setup = structuredClone(t.state.config);
+    t.apply({ type: 'playAgain', playerId: 'p0' });
+
+    expect(t.state.config).toEqual(setup);
+    expect(t.state.seats.slice(0, 4)).toEqual(['p0', 'p1', bots[0], bots[1]]);
+    expect(t.state.players[bots[0]].isBot).toBe(true);
+    expect(t.stack(bots[0])).toBe(50);
+    expect(t.state.players['p0'].topUpsUsed).toBe(0);
+    expect(t.state.config.topUps).toBe(2);
+  });
+
+  it('does not resurrect a kicked player, and ignores bots as the clicker', () => {
+    const t = new Table(2);
+    t.apply({ type: 'addBot', byId: 'p0' });
+    const botId = t.state.seats[2]!;
+    t.start();
+    t.apply({ type: 'kick', byId: 'p0', playerId: 'p1' });
+    t.apply({ type: 'endGame', byId: 'p0' });
+    expectError(t.tryApply({ type: 'playAgain', playerId: botId }), 'illegal-move');
+    t.apply({ type: 'playAgain', playerId: 'p0' });
+    expect(t.state.players['p1'].status).toBe('kicked');
+    expect(t.state.seats[1]).toBeNull();
+    expect(t.state.players[botId].status).toBe('seated');
+    expect(t.stack(botId)).toBe(20);
+  });
+});
+
 describe('bots', () => {
   it('host can add bots up to a full table; approving a human evicts the newest bot', () => {
     const t = new Table(1);

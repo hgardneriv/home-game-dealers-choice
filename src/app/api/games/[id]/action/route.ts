@@ -37,7 +37,7 @@ const MOVES: PlayerMove[] = ['fold', 'check', 'call', 'bet', 'raise'];
 
 /**
  * Player actions. Body: { move, amount?, expectedCall? } for betting moves,
- * or { move: 'imBack' | 'leave' | 'topUp' }.
+ * or { move: 'imBack' | 'leave' | 'topUp' | 'playAgain' }.
  *
  * `expectedCall` guards stale taps: if a raise landed after the client
  * rendered its Call button, the call amount changed and we 409 instead of
@@ -57,7 +57,7 @@ export async function POST(
 
   // Top-up amount is server-authoritative (from config + topUpsUsed) — never
   // taken from the wire.
-  if (move === 'imBack' || move === 'leave' || move === 'topUp') {
+  if (move === 'imBack' || move === 'leave' || move === 'topUp' || move === 'playAgain') {
     const result = await withGame(gameId, () => ({ type: move, playerId }));
     return storeResponse(result, playerId);
   }

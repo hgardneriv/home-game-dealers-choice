@@ -138,7 +138,7 @@ export function GameRoom({ gameId }: { gameId: string }) {
   // Standings wait until the host dismisses the last hand (or there is no
   // last hand — the host ended mid-session and the unfinished pot was refunded).
   if (state.phase === 'ended' && !reviewingLastHand(state)) {
-    return <GameOverScreen state={state} />;
+    return <GameOverScreen game={game} />;
   }
 
   const me = state.yourId ? state.players[state.yourId] : null;

@@ -32,6 +32,7 @@ export async function POST(req: Request): Promise<Response> {
     config,
     bots,
     autoStart: quickPlay,
+    hosted: !quickPlay,
   });
 
   return json(

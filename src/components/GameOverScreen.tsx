@@ -1,19 +1,26 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
-import type { ClientGameState } from '@/server/redact';
+import type { GameApi } from '@/hooks/useGame';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 /** Full-screen final standings, shown when the game ends (host or last-player-standing). */
-export function GameOverScreen({ state }: { state: ClientGameState }) {
+export function GameOverScreen({ game }: { game: GameApi }) {
+  const state = game.state!;
   const buyIn = state.config.startingStack;
   const standings = Object.values(state.players)
     .filter((p) => p.status === 'seated' || p.status === 'away' || p.status === 'busted')
     .sort((a, b) => b.stack - a.stack);
   const winner = standings[0];
   const anyTopUps = standings.some((p) => p.topUpsUsed > 0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const playAgainClass =
+    'w-full rounded-xl bg-emerald-600 px-4 py-3 text-center font-semibold text-white shadow-lg active:scale-95 disabled:opacity-40';
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-zinc-950 p-6 text-white">
@@ -74,12 +81,32 @@ export function GameOverScreen({ state }: { state: ClientGameState }) {
           })}
         </div>
 
-        <Link
-          href="/"
-          className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-center font-semibold text-white shadow-lg active:scale-95"
-        >
-          🃏 Play again
-        </Link>
+        {state.hosted ? (
+          <div className="flex w-full flex-col items-center gap-2">
+            <button
+              className={playAgainClass}
+              disabled={busy}
+              onClick={async () => {
+                if (busy) return;
+                setBusy(true);
+                setError(null);
+                const err = await game.act('playAgain');
+                if (err) setError(err);
+                setBusy(false);
+              }}
+            >
+              🃏 Play again
+            </button>
+            <p className="text-center text-xs text-white/50">
+              Same table — friends on this link land in the lobby with you
+            </p>
+            {error && <p className="text-center text-sm text-red-400">{error}</p>}
+          </div>
+        ) : (
+          <Link href="/" className={playAgainClass}>
+            🃏 Play again
+          </Link>
+        )}
       </motion.div>
     </main>
   );

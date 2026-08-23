@@ -10,7 +10,7 @@ export interface GameApi {
   /** Server-clock-corrected "now" for countdowns. */
   serverNow: () => number;
   join: (name: string, seat: number) => Promise<string | null>;
-  act: (move: PlayerMove | 'imBack' | 'leave' | 'topUp', amount?: number, expectedCall?: number) => Promise<string | null>;
+  act: (move: PlayerMove | 'imBack' | 'leave' | 'topUp' | 'playAgain', amount?: number, expectedCall?: number) => Promise<string | null>;
   /** Dealer's call: pick the next game while the table is choosing. */
   chooseGame: (variant: VariantId) => Promise<string | null>;
   /** Exchange-round move (five-card draw): discard the given card indexes. */

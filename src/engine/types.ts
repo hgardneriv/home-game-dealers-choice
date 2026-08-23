@@ -191,6 +191,11 @@ export interface GameState {
   phase: GamePhase;
   config: TableConfig;
   hostId: string;
+  /**
+   * Invite-link night (not quick play). When the game ends, Play again
+   * rematches this same table so friends don't need a new SMS.
+   */
+  hosted: boolean;
   players: Record<string, Player>;
   /** length maxSeats; index = seat number; value = playerId or null. */
   seats: (string | null)[];
@@ -256,6 +261,7 @@ export type Action =
   | { type: 'resume'; byId: string }
   | { type: 'endGame'; byId: string }
   | { type: 'showResults'; byId: string }
+  | { type: 'playAgain'; playerId: string }
   | { type: 'kick'; byId: string; playerId: string }
   | { type: 'leave'; playerId: string }
   | { type: 'addBot'; byId: string }

@@ -110,6 +110,7 @@ export async function createNewGame(opts: {
   config?: Partial<TableConfig>;
   bots?: number;
   autoStart?: boolean;
+  hosted?: boolean;
 }): Promise<{ gameId: string; hostId: string; state: GameState }> {
   const kv = getKV();
   const gameId = nanoid(12);
@@ -121,6 +122,7 @@ export async function createNewGame(opts: {
     hostName: opts.hostName,
     config: normalizeConfig(opts.config ?? {}),
     now: c.now,
+    hosted: opts.hosted,
   });
 
   const botCount = Math.max(0, Math.min(5, Math.floor(opts.bots ?? 0)));

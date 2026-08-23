@@ -94,6 +94,8 @@ function describeEvent(event: GameEvent, names: (id: string) => string): string 
       return `${names(String(d.playerId))} uses time bank`;
     case 'game-ended':
       return d.winnerId ? `🏆 ${names(String(d.winnerId))} wins the game!` : 'Game over';
+    case 'rematch':
+      return '🃏 Same table — new night';
     default:
       return null;
   }

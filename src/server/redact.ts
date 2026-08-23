@@ -25,6 +25,8 @@ export interface ClientGameState {
   phase: GamePhase;
   config: TableConfig;
   hostId: string;
+  /** Invite-link night. Play again rematches this table. */
+  hosted: boolean;
   yourId: string | null;
   players: Record<string, ClientPlayer>;
   seats: (string | null)[];
@@ -157,6 +159,7 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
     phase: state.phase,
     config: state.config,
     hostId: state.hostId,
+    hosted: state.hosted !== false,
     yourId: playerId,
     players,
     seats: [...state.seats],
