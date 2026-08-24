@@ -30,12 +30,17 @@ one game enabled, hands deal straight in — a classic single-game night.
 
 ## What it looks like
 
-Live gameplay on a phone (screenshots from the production table):
+Live gameplay on a phone. The wordmark sits with the board (or hangs just above it on a tall table); street bets and the dealer button sit beside the top seats' cards so they never float into the pot.
 
-| Your deal — pick the game | Texas Hold'em | Seven-card stud | Baseball (no-peek) | In-between |
-| :---: | :---: | :---: | :---: | :---: |
-| <img src="docs/screenshots/dealer-choice.png" alt="Dealer's choice — the dealer picks from the enabled games" width="150"> | <img src="docs/screenshots/holdem.png" alt="Hold'em — flop out, check or bet" width="150"> | <img src="docs/screenshots/seven-stud.png" alt="Seven-card stud — your two hole cards are shaded DOWN, door cards showing" width="150"> | <img src="docs/screenshots/baseball.png" alt="Baseball — WILD-badged 9 makes a live-labeled Pair of Eights" width="150"> | <img src="docs/screenshots/in-between.png" alt="In-between — the third card lands in the middle and the win is announced" width="150"> |
-| Each dealer calls the game from the host-enabled list. | Ante poker: check-or-bet every street, live pot in the middle. | Your own face-down cards are shaded **DOWN**; up-cards are public. | Wild 3s/9s get a **WILD** band; made hands are labeled live for the table. | The played card lands *in between* and the result is announced to everyone. |
+| Your deal | Texas Hold'em | Five-card draw | Three-card guts |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/dealer-choice.png" alt="Dealer's choice — the dealer picks from the enabled games" width="160"> | <img src="docs/screenshots/holdem.png" alt="Hold'em flop — Pair of Twos, facing a $4 bet with chips out at two seats" width="160"> | <img src="docs/screenshots/five-draw.png" alt="Five-card draw — Two Pair, Aces and Kings, tap cards to swap" width="160"> | <img src="docs/screenshots/guts.png" alt="Three-card guts — rolled-up kings on the draw street" width="160"> |
+| Each dealer calls the game from the host-enabled list. | Ante poker: flop out, live pot, call or raise. | Discard up to 3 — tap the cards on the table. | Same tap-to-swap draw, then a second betting street. |
+
+| Seven-card stud | Baseball (no-peek) | In-between |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/seven-stud.png" alt="Seven-card stud — hole cards shaded DOWN, trips kings, facing $4" width="160"> | <img src="docs/screenshots/baseball.png" alt="Baseball — WILD-badged 9 makes a live-labeled Pair of Eights, $4 out" width="160"> | <img src="docs/screenshots/in-between.png" alt="In-between — the third card lands in the middle and Harry wins the pot" width="160"> |
+| Your own face-down cards are shaded **DOWN**; up-cards are public. | Wild 3s/9s get a **WILD** band; made hands are labeled live. | The played card lands *in between* and the result is announced to everyone. |
 
 ## House rules
 
