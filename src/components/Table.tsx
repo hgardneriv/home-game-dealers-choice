@@ -350,7 +350,7 @@ export function Table({ game }: { game: GameApi }) {
                 ))}
                 {reviewingLastHand(state) && (
                   <div className="mt-1 text-xs font-medium text-white/80">
-                    Last Hand - Press Results to continue 👉
+                    Last Hand - Press Results to continue
                   </div>
                 )}
               </div>
