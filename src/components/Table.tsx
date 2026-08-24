@@ -72,6 +72,73 @@ const CENTERS: Record<string, Point> = {
 /** Landscape watermark — same point as the board so the mark sits on the slots. */
 const LOGO_LANDSCAPE: Point = { x: 50, y: 50 };
 
+/** Chip lands on the nameplate then vanishes — keep under the 2.5s fold-win hold. */
+const AWARD_ARRIVE_MS = 1500;
+
+function PotAward({
+  amount,
+  from,
+  to,
+  delay,
+}: {
+  amount: number;
+  from: Point;
+  to: Point;
+  delay: number;
+}) {
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setGone(true), delay * 1000 + AWARD_ARRIVE_MS + 250);
+    return () => window.clearTimeout(t);
+  }, [delay]);
+  if (gone) return null;
+
+  const secs = AWARD_ARRIVE_MS / 1000;
+  return (
+    <motion.div
+      initial={{ left: `${from.x}%`, top: `${from.y + 8}%`, opacity: 1, scale: 1 }}
+      animate={{
+        left: `${to.x}%`,
+        // Sit on the nameplate (below the cards / caption), not on the hand.
+        top: `${Math.min(92, to.y + 5)}%`,
+        opacity: [1, 1, 0],
+        scale: [1.15, 1.2, 0.7],
+      }}
+      transition={{
+        delay,
+        duration: secs,
+        ease: 'easeInOut',
+        opacity: { delay, duration: secs, times: [0, 0.7, 1] },
+        scale: { delay, duration: secs, times: [0, 0.7, 1] },
+      }}
+      className="pointer-events-none absolute z-30 -translate-x-1/2 -translate-y-1/2"
+    >
+      <div className="relative flex flex-col items-center">
+        <motion.span
+          className="absolute -top-7 text-3xl leading-none"
+          initial={{ opacity: 1, scale: 1, rotate: -18 }}
+          animate={{ opacity: [1, 1, 0], scale: [1, 1.35, 0.5], rotate: [-18, 10, 24] }}
+          transition={{ delay, duration: secs, times: [0, 0.66, 0.8] }}
+        >
+          🔥
+        </motion.span>
+        <motion.span
+          className="absolute -top-7 text-3xl leading-none"
+          initial={{ opacity: 0, scale: 0.5 }}
+          animate={{ opacity: [0, 0, 1, 0], scale: [0.5, 0.5, 1.3, 1.6] }}
+          transition={{ delay, duration: secs + 0.4, times: [0, 0.6, 0.76, 1] }}
+        >
+          💨
+        </motion.span>
+        <div className="flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1 shadow-lg">
+          <span className="inline-block h-4 w-4 rounded-full border-2 border-dashed border-white/70 bg-amber-500" />
+          <span className="text-sm font-bold text-amber-200">${amount}</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function FeltLogo({ marquee }: { marquee: string }) {
   return (
     <div className="pointer-events-none relative select-none text-center">
@@ -187,6 +254,13 @@ export function Table({ game }: { game: GameApi }) {
     });
   })();
   const showHandBanner = winnerLines.length > 0 || reviewingLastHand(state);
+  const payouts: Record<string, number> = {};
+  if (result) {
+    for (const pot of result.pots) {
+      const share = Math.floor(pot.amount / pot.winners.length);
+      for (const w of pot.winners) payouts[w] = (payouts[w] ?? 0) + share;
+    }
+  }
 
   return (
     <div
@@ -388,30 +462,23 @@ export function Table({ game }: { game: GameApi }) {
         )}
       </div>
 
-      {/* Pot flying to the winner */}
+      {/* Pot flies to each winner, then fades so it never sits on their cards. */}
       <AnimatePresence>
-        {result && hand && (
-          <motion.div
-            key={`award-${hand.handNo}`}
-            initial={{ left: `${center.x}%`, top: `${center.y + 8}%`, opacity: 1, scale: 1 }}
-            animate={(() => {
-              const seat = state.players[result.pots[0]?.winners[0]]?.seat ?? 0;
-              const p = posFor(seat);
-              // Land just above the winner's plate, not on top of it.
-              return { left: `${p.x}%`, top: `${Math.max(4, p.y - 9)}%`, scale: 0.9 };
-            })()}
-            exit={{ opacity: 0 }}
-            transition={{ delay: 0.5, duration: 0.7, ease: 'easeInOut' }}
-            className="absolute z-20 -translate-x-1/2 -translate-y-1/2"
-          >
-            <div className="flex items-center gap-1.5 rounded-full bg-black/55 px-3 py-1 shadow-lg">
-              <span className="inline-block h-4 w-4 rounded-full border-2 border-dashed border-white/70 bg-amber-500" />
-              <span className="text-sm font-bold text-amber-300">
-                ${result.pots.reduce((a, p) => a + p.amount, 0)}
-              </span>
-            </div>
-          </motion.div>
-        )}
+        {result &&
+          hand &&
+          Object.entries(payouts).map(([id, amount], i) => {
+            const seat = state.players[id]?.seat ?? 0;
+            const p = posFor(seat);
+            return (
+              <PotAward
+                key={`award-${hand.handNo}-${id}`}
+                amount={amount}
+                from={center}
+                to={p}
+                delay={0.15 * i}
+              />
+            );
+          })}
       </AnimatePresence>
 
       {/* DOUBLE BURN — hitting the post costs double, and everyone hears about it */}
@@ -450,6 +517,7 @@ export function Table({ game }: { game: GameApi }) {
               seatIndex={seatIndex}
               playerId={playerId}
               visualSlot={slotFor(seatIndex)}
+              payout={playerId ? (payouts[playerId] ?? 0) : 0}
             />
           </div>
         );

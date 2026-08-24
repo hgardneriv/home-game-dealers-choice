@@ -8,17 +8,23 @@ import { handLabel } from '@/engine/hand-label';
 import { PlayingCard } from './PlayingCard';
 import { useDrawSelect } from './DrawSelect';
 
+/** Must match PotAward travel in Table — stack pops when the chip arrives. */
+const AWARD_ARRIVE_MS = 1500;
+
 export function Seat({
   game,
   seatIndex,
   playerId,
   visualSlot,
+  payout = 0,
 }: {
   game: GameApi;
   seatIndex: number;
   playerId: string | null;
   /** 0 = hero (bottom), 1 = lower-left, 2 = upper-left, 3 = top, 4 = upper-right, 5 = lower-right. */
   visualSlot: number;
+  /** Chips this seat just won — held back on the plate until the pot lands. */
+  payout?: number;
 }) {
   const state = game.state!;
   const hand = state.hand;
@@ -33,6 +39,30 @@ export function Seat({
     const t = setInterval(() => forceTick((n) => n + 1), 250);
     return () => clearInterval(t);
   }, [isActing]);
+
+  // Must run on empty seats — seating a bot must not change the hook count.
+  const draw = useDrawSelect();
+  const awardKey = hand?.result ? `${hand.handNo}-${payout}` : '';
+  const [landed, setLanded] = useState(!payout);
+  const [stackFlash, setStackFlash] = useState(false);
+  useEffect(() => {
+    if (!payout || !awardKey) {
+      setLanded(true);
+      setStackFlash(false);
+      return;
+    }
+    setLanded(false);
+    setStackFlash(false);
+    const land = window.setTimeout(() => {
+      setLanded(true);
+      setStackFlash(true);
+    }, AWARD_ARRIVE_MS);
+    const cool = window.setTimeout(() => setStackFlash(false), AWARD_ARRIVE_MS + 900);
+    return () => {
+      window.clearTimeout(land);
+      window.clearTimeout(cool);
+    };
+  }, [awardKey, payout]);
 
   if (!player) {
     return (
@@ -70,7 +100,6 @@ export function Seat({
 
   const variant = hand ? getVariant(hand.variant) : null;
   const isWildCard = (card: string) => variant?.wildRanks?.includes(card[0]) ?? false;
-  const draw = useDrawSelect();
   const pickingDraw = isYou && draw.active && !!showCards;
 
   // Every seat keeps bet + D beside the hole cards. Right-side seats
@@ -86,6 +115,7 @@ export function Seat({
   const dealerSeat =
     state.phase === 'choosing' ? state.choosing?.buttonSeat : hand?.buttonSeat;
   const seatIsDealer = !pickingDraw && dealerSeat === seatIndex;
+  const shownStack = !payout || landed ? player.stack : Math.max(0, player.stack - payout);
 
   // Casino-machine courtesy: name any made hand as it develops. Everyone sees
   // a label built from this seat's FACE-UP cards; you additionally see one
@@ -251,13 +281,25 @@ export function Seat({
           {player.name}
           {isYou ? <span className="opacity-60"> · you</span> : ''}
         </div>
-        <div className="text-xs font-bold text-amber-300">
-          {player.status === 'busted' ? (
+        <div
+          className={`text-xs font-bold transition-colors duration-300 ${
+            stackFlash ? 'text-amber-100' : 'text-amber-300'
+          }`}
+        >
+          {player.status === 'busted' && !stackFlash ? (
             <span className="text-red-400">busted</span>
           ) : allIn && state.phase === 'playing' ? (
             <span className="text-red-300">ALL IN</span>
           ) : (
-            <>${player.stack}</>
+            <motion.span
+              key={shownStack}
+              initial={stackFlash ? { scale: 1.45, opacity: 0.4 } : false}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 16 }}
+              className="inline-block"
+            >
+              ${shownStack}
+            </motion.span>
           )}
           {player.status === 'away' && <span className="ml-1">💤</span>}
         </div>
