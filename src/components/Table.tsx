@@ -165,19 +165,19 @@ export function Table({ game }: { game: GameApi }) {
     const t = setInterval(() => forceTick((n) => n + 1), 250);
     return () => clearInterval(t);
   }, [revealSeq]);
-  const winnersLine = (() => {
-    if (!result || !hand) return null;
+  const winnerLines = (() => {
+    if (!result || !hand) return [];
     const total: Record<string, number> = {};
     for (const pot of result.pots) {
       for (const w of pot.winners) total[w] = (total[w] ?? 0) + Math.floor(pot.amount / pot.winners.length);
     }
-    const parts = Object.entries(total).map(([id, amt]) => {
+    return Object.entries(total).map(([id, amt]) => {
       const name = state.players[id]?.name ?? '?';
       const description = result.descriptions[id];
       return description ? `${name} wins $${amt} — ${description}` : `${name} wins $${amt}`;
     });
-    return parts.join('  ·  ');
   })();
+  const showHandBanner = winnerLines.length > 0 || reviewingLastHand(state);
 
   return (
     <div
@@ -218,8 +218,9 @@ export function Table({ game }: { game: GameApi }) {
         style={{ borderRadius: 'inherit' }}
       />
 
-      {/* Short table: wordmark as a center watermark behind the slots. */}
-      {orientation === 'landscape' && (
+      {/* Short table: wordmark as a center watermark behind the slots.
+          Hidden while a hand result is up so the banner can sit in that band. */}
+      {orientation === 'landscape' && !showHandBanner && (
         <div
           className="pointer-events-none absolute z-0 -translate-x-1/2 -translate-y-1/2"
           style={{ left: `${LOGO_LANDSCAPE.x}%`, top: `${LOGO_LANDSCAPE.y}%` }}
@@ -234,11 +235,45 @@ export function Table({ game }: { game: GameApi }) {
         className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
         style={{ left: `${center.x}%`, top: `${center.y}%` }}
       >
-        {orientation === 'portrait' && (
+        {orientation === 'portrait' && !showHandBanner && (
           <div className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
             <FeltLogo marquee={marquee} />
           </div>
         )}
+        {/* Winner / last-hand copy sits under HOME GAME (the old marquee
+            band) and the whole stack is bottom-anchored above the board, so
+            extra winners grow up into the open felt — never over hole cards. */}
+        <AnimatePresence>
+          {showHandBanner && (
+            <motion.div
+              key={`banner-${hand?.handNo ?? 'end'}`}
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ delay: 0.35 }}
+              className="absolute bottom-full left-1/2 z-30 mb-2 flex w-max max-w-[min(86vw,28rem)] -translate-x-1/2 flex-col items-center"
+            >
+              <div
+                className="mb-1 bg-gradient-to-b from-amber-100 via-amber-300/95 to-amber-600/85 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
+                style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
+              >
+                HOME GAME
+              </div>
+              <div className="flex flex-col items-center rounded-xl border border-amber-400/40 bg-black/80 px-4 py-2 text-center shadow-xl">
+                {winnerLines.map((line) => (
+                  <span key={line} className="text-sm font-semibold text-amber-300">
+                    🏆 {line}
+                  </span>
+                ))}
+                {reviewingLastHand(state) && (
+                  <div className="mt-1 text-xs font-medium text-white/80">
+                    Last Hand - Press Results to continue 👉
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {state.phase === 'lobby' ? (
           <div className="text-center text-white/85">
             <div className="text-sm font-medium">Waiting for players…</div>
@@ -382,28 +417,6 @@ export function Table({ game }: { game: GameApi }) {
             >
               💥 DOUBLE BURN!!!
             </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Winner banner */}
-      <AnimatePresence>
-        {winnersLine && (
-          <motion.div
-            key={`banner-${hand?.handNo}`}
-            initial={{ opacity: 0, y: 12, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ delay: 0.35 }}
-            className="absolute left-1/2 z-30 flex w-max max-w-[86%] -translate-x-1/2 flex-col items-center rounded-xl border border-amber-400/40 bg-black/80 px-4 py-2 text-center shadow-xl"
-            style={{ top: `${center.y + 15}%` }}
-          >
-            <span className="text-sm font-semibold text-amber-300">🏆 {winnersLine}</span>
-            {reviewingLastHand(state) && (
-              <div className="mt-1 text-xs font-medium text-white/80">
-                Game Over - Tap results to see standings
-              </div>
-            )}
           </motion.div>
         )}
       </AnimatePresence>

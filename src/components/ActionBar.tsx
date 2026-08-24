@@ -68,7 +68,7 @@ export function ActionBar({ game }: { game: GameApi }) {
       return (
         <div className={bar}>
           <span className="flex-1 text-center text-base font-medium text-white">
-            Last hand - Press Results to continue --&gt;
+            Last Hand - Press Results to continue 👉
           </span>
           <button
             className="rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white disabled:opacity-40 active:scale-95"
