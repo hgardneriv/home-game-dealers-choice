@@ -155,3 +155,29 @@ describe('in-between result-reveal pause', () => {
     expect(t.hand.round.botActAt).toBe(NOW + 800);
   });
 });
+
+describe('in-between aceCall redaction', () => {
+  const IB = { enabledVariants: ['in-between'] as ['in-between'], ante: 2 };
+
+  it('stays off until a first-card ace is called, then high or low for everyone', () => {
+    const t = new Table(3, { config: IB });
+    t.start();
+    // zeroRand never deals a first-card ace on the opening turn.
+    expect(redactForPlayer(t.state, 'p1').hand!.aceCall).toBeUndefined();
+    expect(redactForPlayer(t.state, null).hand!.aceCall).toBeUndefined();
+
+    t.hand.board = ['Ah'];
+    t.hand.vstate.awaitingAce = true;
+    t.hand.vstate.aceLow = false;
+    expect(redactForPlayer(t.state, 'p1').hand!.aceCall).toBeUndefined();
+
+    t.hand.board = ['Ah', '9h'];
+    t.hand.vstate.awaitingAce = false;
+    t.hand.vstate.aceLow = false;
+    expect(redactForPlayer(t.state, 'p0').hand!.aceCall).toBe('high');
+    expect(redactForPlayer(t.state, null).hand!.aceCall).toBe('high');
+
+    t.hand.vstate.aceLow = true;
+    expect(redactForPlayer(t.state, 'p2').hand!.aceCall).toBe('low');
+  });
+});

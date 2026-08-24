@@ -124,6 +124,8 @@ interface InBetweenResult {
   third: string | null;
   outcome: 'win' | 'lose' | 'post' | 'pass';
   amount: number;
+  /** Present only when the first card was a called ace. */
+  aceLow?: boolean;
 }
 
 
@@ -156,6 +158,13 @@ export function Table({ game }: { game: GameApi }) {
     return game.serverNow() - latest.at < revealCfg.ms ? latest : null;
   })();
   const reveal = revealEvent ? (revealEvent.data as InBetweenResult) : null;
+  const firstAceCall = reveal
+    ? reveal.aceLow === undefined
+      ? undefined
+      : reveal.aceLow
+        ? 'low'
+        : 'high'
+    : hand?.aceCall;
 
   // Tick while a reveal is showing so it dismisses on schedule.
   const [, forceTick] = useState(0);
@@ -306,7 +315,13 @@ export function Table({ game }: { game: GameApi }) {
                           <PlayingCard card={card} size="md" dealt />
                         </div>
                       ) : (
-                        <PlayingCard key={card} card={card} size="md" dealt />
+                        <PlayingCard
+                          key={card}
+                          card={card}
+                          size="md"
+                          dealt
+                          aceCall={i === 0 ? firstAceCall : undefined}
+                        />
                       )
                     ) : (
                       <EmptySlot key={`slot${i}`} />

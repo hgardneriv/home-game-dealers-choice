@@ -31,6 +31,7 @@ export function PlayingCard({
   dealt = false,
   wild = false,
   facedown = false,
+  aceCall,
 }: {
   /** e.g. 'As'; undefined renders a face-down card. */
   card?: string;
@@ -41,6 +42,8 @@ export function PlayingCard({
   wild?: boolean;
   /** Your own hole card others can't see (stud) — shaded card-back blue. */
   facedown?: boolean;
+  /** In-between first-card ace: High (red) or Low (blue) after the call. */
+  aceCall?: 'high' | 'low';
 }) {
   const sizing = `${SIZE_CLASSES[size]} aspect-[20/29]`;
 
@@ -92,7 +95,11 @@ export function PlayingCard({
   const rank = card[0] === 'T' ? '10' : card[0];
   const suit = card[1];
   const red = suit === 'h' || suit === 'd';
-  const color = red ? '#d92638' : '#101828';
+  const color = aceCall ? '#ffffff' : red ? '#d92638' : '#101828';
+  const faceFill =
+    aceCall === 'high' ? '#dc2626' : aceCall === 'low' ? '#2563eb' : 'url(#hgCardFace)';
+  const faceStroke =
+    aceCall === 'high' ? '#7f1d1d' : aceCall === 'low' ? '#1e3a8a' : '#cbc5b7';
   const indexSize = rank === '10' ? 9.5 : 11;
 
   return (
@@ -101,7 +108,7 @@ export function PlayingCard({
       animate={{ scaleX: 1, y: 0, opacity: 1 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className={sizing}
-      aria-label={card}
+      aria-label={aceCall ? `${card} ${aceCall}` : card}
     >
       <svg
         viewBox="0 0 40 58"
@@ -115,8 +122,16 @@ export function PlayingCard({
             <stop offset="1" stopColor="#f2eee4" />
           </linearGradient>
         </defs>
-        <rect x="0" y="0" width="40" height="58" rx="4" fill="url(#hgCardFace)" stroke="#cbc5b7" />
-        <rect x="1.6" y="1.6" width="36.8" height="54.8" rx="3" fill="none" stroke="rgba(0,0,0,0.06)" />
+        <rect x="0" y="0" width="40" height="58" rx="4" fill={faceFill} stroke={faceStroke} />
+        <rect
+          x="1.6"
+          y="1.6"
+          width="36.8"
+          height="54.8"
+          rx="3"
+          fill="none"
+          stroke={aceCall ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.06)'}
+        />
 
         {/* Oversized ghost pip — a subtle watermark like the felt's. */}
         <g transform="translate(7.4, 16.4) scale(1.05)">
@@ -195,6 +210,34 @@ export function PlayingCard({
               letterSpacing="1.2"
             >
               WILD
+            </text>
+          </g>
+        )}
+
+        {/* In-between first-card ace: High / Low on the colored face. */}
+        {aceCall && (
+          <g>
+            <rect
+              x="3"
+              y="24"
+              width="34"
+              height="10"
+              rx="2"
+              fill={aceCall === 'high' ? '#7f1d1d' : '#1e3a8a'}
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth="0.7"
+            />
+            <text
+              x="20"
+              y="31.5"
+              fontSize="7"
+              fontWeight="800"
+              fontFamily="system-ui, sans-serif"
+              textAnchor="middle"
+              fill="#ffffff"
+              letterSpacing="0.6"
+            >
+              {aceCall === 'high' ? 'High' : 'Low'}
             </text>
           </g>
         )}

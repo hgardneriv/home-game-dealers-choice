@@ -84,6 +84,7 @@ interface ResultData {
   outcome: 'win' | 'lose' | 'post' | 'pass';
   amount: number;
   potAfter: number;
+  aceLow?: boolean;
 }
 
 function lastResult(t: Table): ResultData {
@@ -297,9 +298,16 @@ describe('ace call', () => {
     expect(t.hand.board).toEqual(['Ah', '9h']);
     const turnEv = t.state.events.filter((e) => e.type === 'in-between-turn').at(-1)!;
     expect(turnEv.data).toEqual({ playerId: 'p2', cards: ['Ah', '9h'], aceLow: false });
-    // Ace high: window is 9..14, K (13) wins.
+    // Ace high: window is 9..14, K (13) wins. The result carries aceLow so
+    // the 4s reveal can keep the High mark on the first card.
     wager(t, 'p2', 3);
-    expect(lastResult(t)).toMatchObject({ playerId: 'p2', outcome: 'win', amount: 3, third: 'Kd' });
+    expect(lastResult(t)).toMatchObject({
+      playerId: 'p2',
+      outcome: 'win',
+      amount: 3,
+      third: 'Kd',
+      aceLow: false,
+    });
     expect(t.stack('p2')).toBe(21);
     expect(t.hand.pot).toBe(3);
     expect(t.totalChips()).toBe(60);
@@ -311,7 +319,7 @@ describe('ace call', () => {
     t.apply({ type: 'variantMove', playerId: 'p1', move: { kind: 'aceCall', high: false } });
     expect(t.hand.board).toEqual(['Ah', '9h']);
     wager(t, 'p1', 2); // window 1..9, 5 is inside
-    expect(lastResult(t)).toMatchObject({ outcome: 'win', amount: 2 });
+    expect(lastResult(t)).toMatchObject({ outcome: 'win', amount: 2, aceLow: true });
     expect(t.stack('p1')).toBe(20);
     expect(t.totalChips()).toBe(60);
   });

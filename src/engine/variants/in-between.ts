@@ -47,10 +47,11 @@ import { newDeck, rankValue, shuffle, type RandInt } from '../deck';
  *     A turn's two up-cards are set (after the ace call, if any).
  * - 'in-between-result'   { playerId, cards: [Card, Card], third: Card|null,
  *                           outcome: 'win'|'lose'|'post'|'pass',
- *                           amount, potAfter }
+ *                           amount, potAfter, aceLow?: boolean }
  *     The turn resolved. `third` is null on a pass (no card is burned);
  *     `amount` is the chips that actually moved (post = doubled wager capped
  *     at stack; pass = 0). Reveal machinery keys off `third` being non-null.
+ *     `aceLow` is present only when the first card was a called ace.
  * - 'in-between-reshuffle' {}
  *     The deck ran low and was rebuilt mid-hand.
  */
@@ -261,6 +262,8 @@ export const inBetween: GameVariant = {
         return { error: { code: 'bad-amount', message: `Wager at most ${max}` } };
 
       const [c1, c2] = hand.board;
+      // Capture before we clear it: the reveal keeps High/Low on the first ace.
+      const calledAceLow = rankValue(c1) === 14 ? !!st.aceLow : undefined;
       // A first-card ace called low counts as 1; a second-card ace is high.
       const v1 = st.aceLow ? 1 : rankValue(c1);
       const v2 = rankValue(c2);
@@ -311,6 +314,7 @@ export const inBetween: GameVariant = {
         outcome,
         amount: moved,
         potAfter: hand.pot,
+        ...(calledAceLow !== undefined ? { aceLow: calledAceLow } : {}),
       });
 
       if (hand.pot === 0) {

@@ -83,9 +83,21 @@ export interface ClientHand {
   publicCards: Record<string, Card[]>;
   /** How many cards each dealt-in player holds — for rendering card backs. */
   cardCounts: Record<string, number>;
+  /** In-between: first-card ace designation after the high/low call. */
+  aceCall?: 'high' | 'low';
   /** Your legal actions when it is your turn, else null. */
   legalActions: LegalActions | null;
   result: HandResult | null;
+}
+
+/** Public High/Low mark for an in-between first-card ace, after the call. */
+function inBetweenAceCall(h: GameState['hand']): 'high' | 'low' | undefined {
+  if (!h || h.variant !== 'in-between') return undefined;
+  const first = h.board[0];
+  if (!first || first[0] !== 'A') return undefined;
+  const st = h.vstate as { awaitingAce?: boolean; aceLow?: boolean };
+  if (st.awaitingAce) return undefined;
+  return st.aceLow ? 'low' : 'high';
 }
 
 export function redactForPlayer(state: GameState, playerId: string | null): ClientGameState {
@@ -147,6 +159,7 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
           : null,
       publicCards,
       cardCounts,
+      aceCall: inBetweenAceCall(h),
       legalActions:
         playerId && h.round.toAct === playerId ? getLegalActions(state, playerId) : null,
       result: h.result, // public at hand end (revealed cards only)
