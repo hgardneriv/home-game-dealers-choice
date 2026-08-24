@@ -60,10 +60,58 @@ const LAYOUTS: Record<string, Point[]> = {
   ],
 };
 
-const CENTER: Point = { x: 50, y: 42 };
+/**
+ * Board + pot cluster. Same marks as home-game-poker Hold'em — long table
+ * 54%, short table 50%. Tune per-variant later if a game needs its own Y.
+ */
+const CENTERS: Record<string, Point> = {
+  portrait: { x: 50, y: 54 },
+  landscape: { x: 50, y: 50 },
+};
+
+/** Landscape watermark — same point as the board so the mark sits on the slots. */
+const LOGO_LANDSCAPE: Point = { x: 50, y: 50 };
 
 function lerp(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+/** Top trio — bet + D render inside Seat, beside the hole cards. */
+function chipsLiveInSeat(slot: number): boolean {
+  return slot === 2 || slot === 3 || slot === 4;
+}
+
+function FeltLogo({ marquee }: { marquee: string }) {
+  return (
+    <div className="pointer-events-none relative select-none text-center">
+      <div
+        className="absolute left-1/2 top-1/2 h-48 w-[26rem] max-w-[80vw] -translate-x-1/2 -translate-y-1/2"
+        style={{
+          background:
+            'radial-gradient(closest-side, rgba(216,180,92,0.16) 0%, rgba(216,180,92,0) 100%)',
+        }}
+      />
+      <div
+        className="relative text-2xl leading-none tracking-[0.5em] text-black/60 sm:text-[28px]"
+        style={{ paddingLeft: '0.5em' }}
+      >
+        ♠&nbsp;♥&nbsp;♦&nbsp;♣
+      </div>
+      <div
+        className="relative mt-1 bg-gradient-to-b from-amber-100 via-amber-300/95 to-amber-600/85 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
+        style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
+      >
+        HOME GAME
+      </div>
+      <div className="relative mt-1 flex items-center justify-center gap-2">
+        <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
+        <span className="text-[10px] tracking-[0.4em] text-amber-100/60 sm:text-xs" style={{ paddingLeft: '0.4em' }}>
+          {marquee}
+        </span>
+        <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
+      </div>
+    </div>
+  );
 }
 
 function EmptySlot() {
@@ -87,13 +135,13 @@ interface InBetweenResult {
   amount: number;
 }
 
-function BetChip({ amount, at }: { amount: number; at: Point }) {
+function BetChip({ amount, at, center }: { amount: number; at: Point; center: Point }) {
   return (
     <motion.div
       layout
       initial={{ scale: 0.4, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      exit={{ left: `${CENTER.x}%`, top: `${CENTER.y}%`, opacity: 0, transition: { duration: 0.45 } }}
+      exit={{ left: `${center.x}%`, top: `${center.y}%`, opacity: 0, transition: { duration: 0.45 } }}
       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
       className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
       style={{ left: `${at.x}%`, top: `${at.y}%` }}
@@ -110,13 +158,16 @@ export function Table({ game }: { game: GameApi }) {
   const state = game.state!;
   const hand = state.hand;
   const orientation = useOrientation();
+  const center = CENTERS[orientation];
   const positions = LAYOUTS[orientation];
   const mySeat = state.yourId ? (state.players[state.yourId]?.seat ?? 0) : 0;
-  const posFor = (seatIndex: number) => positions[(seatIndex - mySeat + 6) % 6];
+  const slotFor = (seatIndex: number) => (seatIndex - mySeat + 6) % 6;
+  const posFor = (seatIndex: number) => positions[slotFor(seatIndex)];
 
   const choosing = state.phase === 'choosing' ? state.choosing : null;
   // While the dealer picks, the marquee flips back to the brand.
   const variant = hand && !choosing ? getVariant(hand.variant) : null;
+  const marquee = variant ? variant.marquee : "DEALER'S CHOICE";
   const result = hand?.result ?? null;
 
   // Per-turn result reveal (in-between): the freshest result event still
@@ -195,41 +246,27 @@ export function Table({ game }: { game: GameApi }) {
         style={{ borderRadius: 'inherit' }}
       />
 
-      {/* Felt logo — soft gold glow, title, and flanked subtitle */}
-      <div className="pointer-events-none absolute left-1/2 top-[62%] z-0 -translate-x-1/2 -translate-y-1/2 select-none text-center">
+      {/* Short table: wordmark as a center watermark behind the slots. */}
+      {orientation === 'landscape' && (
         <div
-          className="absolute left-1/2 top-1/2 h-48 w-[26rem] max-w-[80vw] -translate-x-1/2 -translate-y-1/2"
-          style={{
-            background:
-              'radial-gradient(closest-side, rgba(216,180,92,0.16) 0%, rgba(216,180,92,0) 100%)',
-          }}
-        />
-        <div
-          className="relative text-2xl leading-none tracking-[0.5em] text-black/60 sm:text-[28px]"
-          style={{ paddingLeft: '0.5em' }}
+          className="pointer-events-none absolute z-0 -translate-x-1/2 -translate-y-1/2"
+          style={{ left: `${LOGO_LANDSCAPE.x}%`, top: `${LOGO_LANDSCAPE.y}%` }}
         >
-          ♠&nbsp;♥&nbsp;♦&nbsp;♣
+          <FeltLogo marquee={marquee} />
         </div>
-        <div
-          className="relative mt-1 bg-gradient-to-b from-amber-100 via-amber-300/95 to-amber-600/85 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
-          style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
-        >
-          HOME GAME
-        </div>
-        <div className="relative mt-1.5 flex items-center justify-center gap-2">
-          <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
-          <span className="text-[10px] tracking-[0.4em] text-amber-100/60 sm:text-xs" style={{ paddingLeft: '0.4em' }}>
-            {variant ? variant.marquee : "DEALER'S CHOICE"}
-          </span>
-          <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
-        </div>
-      </div>
+      )}
 
-      {/* Board + pot */}
+      {/* Board + pot. Long-table wordmark hangs just above the slots (out of
+          flow) so logo→cards stays tight while cards→pot keeps a real gap. */}
       <div
         className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
-        style={{ left: `${CENTER.x}%`, top: `${CENTER.y}%` }}
+        style={{ left: `${center.x}%`, top: `${center.y}%` }}
       >
+        {orientation === 'portrait' && (
+          <div className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
+            <FeltLogo marquee={marquee} />
+          </div>
+        )}
         {state.phase === 'lobby' ? (
           <div className="text-center text-white/85">
             <div className="text-sm font-medium">Waiting for players…</div>
@@ -334,7 +371,7 @@ export function Table({ game }: { game: GameApi }) {
         {result && hand && (
           <motion.div
             key={`award-${hand.handNo}`}
-            initial={{ left: `${CENTER.x}%`, top: `${CENTER.y + 8}%`, opacity: 1, scale: 1 }}
+            initial={{ left: `${center.x}%`, top: `${center.y + 8}%`, opacity: 1, scale: 1 }}
             animate={(() => {
               const seat = state.players[result.pots[0]?.winners[0]]?.seat ?? 0;
               const p = posFor(seat);
@@ -387,7 +424,7 @@ export function Table({ game }: { game: GameApi }) {
             exit={{ opacity: 0 }}
             transition={{ delay: 0.35 }}
             className="absolute left-1/2 z-30 flex w-max max-w-[86%] -translate-x-1/2 flex-col items-center rounded-xl border border-amber-400/40 bg-black/80 px-4 py-2 text-center shadow-xl"
-            style={{ top: `${CENTER.y + 15}%` }}
+            style={{ top: `${center.y + 15}%` }}
           >
             <span className="text-sm font-semibold text-amber-300">🏆 {winnersLine}</span>
             {reviewingLastHand(state) && (
@@ -399,14 +436,17 @@ export function Table({ game }: { game: GameApi }) {
         )}
       </AnimatePresence>
 
-      {/* Dealer button — during choosing it sits with the picking dealer */}
-      {discSeat !== null && (
+      {/* Dealer button — hero + top trio render D beside their cards in Seat.
+          During choosing it still sits with the picking dealer. */}
+      {discSeat !== null &&
+        state.players[state.yourId ?? '']?.seat !== discSeat &&
+        !chipsLiveInSeat(slotFor(discSeat)) && (
         <motion.div
           layout
           transition={{ type: 'spring', stiffness: 300, damping: 25 }}
           className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
           style={(() => {
-            const p = lerp(posFor(discSeat), CENTER, 0.22);
+            const p = lerp(posFor(discSeat), center, 0.22);
             return { left: `${p.x - 4}%`, top: `${p.y}%` };
           })()}
         >
@@ -421,13 +461,17 @@ export function Table({ game }: { game: GameApi }) {
         {hand &&
           !result &&
           Object.entries(hand.committed).map(([playerId, amount]) => {
+            // Hero + top trio render their bet beside the cards in Seat.
+            if (playerId === state.yourId) return null;
             const seat = state.players[playerId]?.seat;
             if (amount <= 0 || seat === null || seat === undefined) return null;
+            if (chipsLiveInSeat(slotFor(seat))) return null;
             return (
               <BetChip
                 key={`${playerId}-${hand.street}`}
                 amount={amount}
-                at={lerp(posFor(seat), CENTER, 0.32)}
+                at={lerp(posFor(seat), center, 0.32)}
+                center={center}
               />
             );
           })}
@@ -442,7 +486,12 @@ export function Table({ game }: { game: GameApi }) {
             className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
           >
-            <Seat game={game} playerId={playerId} />
+            <Seat
+              game={game}
+              seatIndex={seatIndex}
+              playerId={playerId}
+              visualSlot={slotFor(seatIndex)}
+            />
           </div>
         );
       })}
