@@ -8,6 +8,7 @@ import { useToast } from './Toast';
 import { LeaveButton } from './LeaveButton';
 import { useDrawSelect } from './DrawSelect';
 import { reviewingLastHand } from '@/engine/types';
+import { drawPromptCopy } from './draw-banners';
 
 export function ActionBar({ game }: { game: GameApi }) {
   const toast = useToast();
@@ -352,7 +353,7 @@ export function ActionBar({ game }: { game: GameApi }) {
     return (
       <div className="sticky bottom-0 flex flex-col gap-2 border-t border-white/10 bg-zinc-900 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <span className="text-center text-sm font-semibold text-amber-300">
-          🂠 Your draw — tap cards on the table to swap (up to {max})
+          🂠 {drawPromptCopy(max)}
         </span>
         <div className="flex gap-2">
           {leave}

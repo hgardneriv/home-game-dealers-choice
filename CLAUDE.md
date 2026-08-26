@@ -180,6 +180,11 @@ animations freeze in screenshots — tool environment, not a bug.
    `chooseDiscards` stands on flush+, keeps a pair, draws to a two-flush
    or two-card straight, otherwise keeps the high card. `decideBet` uses
    `decideFromStrength` + `gutsStrength`.
+   **Draw-street banners SHIPPED (2026-08-26, user-tested).** The acting
+   player sees the ActionBar draw prompt also in the winner-banner slot.
+   After a discard, everyone sees "{name} discarded N" / "stood pat" until
+   the next action or the draw street closes. Client-only
+   (`src/components/draw-banners.ts`) on public `cards-drawn` events.
    **In-between all-pass leash (2026-08-01, user-picked house rule)**: a
    single idle orbit no longer ends the hand — the pot-carry backstop fires
    only after THREE consecutive all-pass orbits (`MAX_PASS_ORBITS`,

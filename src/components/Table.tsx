@@ -8,6 +8,12 @@ import { Seat } from './Seat';
 import { PlayingCard, SUIT_PATH } from './PlayingCard';
 import { getVariant } from '@/engine/variants/registry';
 import { reviewingLastHand } from '@/engine/types';
+import {
+  currentDiscardAnnouncement,
+  discardAnnouncementCopy,
+  drawPromptCopy,
+  myDrawMax,
+} from './draw-banners';
 
 /**
  * Felt texture: a sparse diagonal tile of dark suit motifs baked into a
@@ -254,6 +260,19 @@ export function Table({ game }: { game: GameApi }) {
     });
   })();
   const showHandBanner = winnerLines.length > 0 || reviewingLastHand(state);
+  const drawMax = myDrawMax(hand?.legalActions ?? null);
+  const myDrawTurn =
+    !showHandBanner &&
+    state.phase === 'playing' &&
+    !!state.yourId &&
+    hand?.toAct === state.yourId &&
+    drawMax !== null;
+  const discardNote = currentDiscardAnnouncement(state.events, hand);
+  const discardLine = discardNote
+    ? discardAnnouncementCopy(state.players[discardNote.playerId]?.name ?? 'Player', discardNote.count)
+    : null;
+  const showDrawBanners = !showHandBanner && (myDrawTurn || !!discardLine);
+  const hideLogo = showHandBanner || showDrawBanners;
   const payouts: Record<string, number> = {};
   if (result) {
     for (const pot of result.pots) {
@@ -302,8 +321,9 @@ export function Table({ game }: { game: GameApi }) {
       />
 
       {/* Short table: wordmark as a center watermark behind the slots.
-          Hidden while a hand result is up so the banner can sit in that band. */}
-      {orientation === 'landscape' && !showHandBanner && (
+          Hidden while a result or draw banner is up so that chrome can sit
+          in this band. */}
+      {orientation === 'landscape' && !hideLogo && (
         <div
           className="pointer-events-none absolute z-0 -translate-x-1/2 -translate-y-1/2"
           style={{ left: `${LOGO_LANDSCAPE.x}%`, top: `${LOGO_LANDSCAPE.y}%` }}
@@ -318,22 +338,26 @@ export function Table({ game }: { game: GameApi }) {
         className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
         style={{ left: `${center.x}%`, top: `${center.y}%` }}
       >
-        {orientation === 'portrait' && !showHandBanner && (
+        {orientation === 'portrait' && !hideLogo && (
           <div className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
             <FeltLogo marquee={marquee} />
           </div>
         )}
-        {/* Winner / last-hand copy sits under HOME GAME (the old marquee
-            band) and the whole stack is bottom-anchored above the board, so
-            extra winners grow up into the open felt — never over hole cards. */}
+        {/* Winner / last-hand / draw-street copy sits under HOME GAME (the
+            old marquee band). Extra winners grow up into the open felt —
+            never over hole cards. */}
         <AnimatePresence>
-          {showHandBanner && (
+          {(showHandBanner || showDrawBanners) && (
             <motion.div
-              key={`banner-${hand?.handNo ?? 'end'}`}
+              key={
+                showHandBanner
+                  ? `banner-${hand?.handNo ?? 'end'}`
+                  : `draw-${discardLine ?? 'prompt'}-${myDrawTurn ? drawMax : ''}`
+              }
               initial={{ opacity: 0, y: 8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ delay: 0.35 }}
+              transition={{ delay: showHandBanner ? 0.35 : 0 }}
               className="absolute bottom-full left-1/2 z-30 mb-2 flex w-max max-w-[min(86vw,28rem)] -translate-x-1/2 flex-col items-center"
             >
               <div
@@ -352,6 +376,14 @@ export function Table({ game }: { game: GameApi }) {
                   <div className="mt-1 text-xs font-medium text-white/80">
                     Last Hand - Press Results to continue
                   </div>
+                )}
+                {showDrawBanners && discardLine && (
+                  <span className="text-sm font-semibold text-amber-200">{discardLine}</span>
+                )}
+                {showDrawBanners && myDrawTurn && drawMax !== null && (
+                  <span className={`text-sm font-semibold text-amber-300 ${discardLine ? 'mt-1' : ''}`}>
+                    🂠 {drawPromptCopy(drawMax)}
+                  </span>
                 )}
               </div>
             </motion.div>
