@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { VariantId } from '@/engine/types';
 import { getVariant, IMPLEMENTED_VARIANTS } from '@/engine/variants/registry';
 import { useRememberedName } from '@/hooks/useRememberedName';
+import { readCreateResponse } from './create-game-response';
 
 export function CreateGame() {
   const router = useRouter();
@@ -68,9 +69,9 @@ export function CreateGame() {
               }
         ),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message ?? 'Failed to create game');
-      router.push(`/game/${data.gameId}`);
+      const result = await readCreateResponse(res);
+      if ('error' in result) throw new Error(result.error);
+      router.push(`/game/${result.gameId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
       setBusy(false);

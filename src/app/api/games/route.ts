@@ -1,6 +1,6 @@
 import { createNewGame } from '@/server/store';
 import { buildSetCookie } from '@/server/identity';
-import { json, readJson } from '@/server/api';
+import { failedStoreResponse, json, readJson } from '@/server/api';
 import type { TableConfig } from '@/engine/types';
 import { IMPLEMENTED_VARIANTS } from '@/engine/variants/registry';
 
@@ -27,17 +27,21 @@ export async function POST(req: Request): Promise<Response> {
     config.enabledVariants = [...IMPLEMENTED_VARIANTS];
   }
 
-  const { gameId, hostId } = await createNewGame({
-    hostName: name,
-    config,
-    bots,
-    autoStart: quickPlay,
-    hosted: !quickPlay,
-  });
+  try {
+    const { gameId, hostId } = await createNewGame({
+      hostName: name,
+      config,
+      bots,
+      autoStart: quickPlay,
+      hosted: !quickPlay,
+    });
 
-  return json(
-    { gameId },
-    200,
-    { 'set-cookie': buildSetCookie(gameId, hostId) }
-  );
+    return json(
+      { gameId },
+      200,
+      { 'set-cookie': buildSetCookie(gameId, hostId) }
+    );
+  } catch (e) {
+    return failedStoreResponse(e);
+  }
 }

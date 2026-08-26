@@ -21,11 +21,14 @@ mixed-game nights and a host-ends-long-games path. Browser-verified per game.
 - Env (values in Vercel, never the repo): `SESSION_SECRET` (fresh per project),
   `KV_REST_API_URL` / `KV_REST_API_TOKEN`. ⚠️ Values must be UNQUOTED — a
   quoted URL pasted from an env file produces "invalid URL" 500s at runtime.
-- **Redis is SHARED with the old `home-game-poker` app** (same Upstash
-  `home-game-poker-redis` resource, free plan). Fine for game nights; if
-  command limits bite, provision a dedicated Marketplace resource for this
-  project and swap the two env vars. `src/server/kv.ts` accepts both
-  `KV_REST_API_*` and `UPSTASH_REDIS_REST_*` names.
+- **Redis is SHARED** with `home-game-poker` (Texas Hold'em) on the same
+  Upstash `home-game-poker-redis` resource. Upgraded off the free 500k/month
+  command cap (2026-08-26) after SSE `readVersion` polling (every 500ms per
+  open table, ~173k commands/day) exhausted it — create then 500'd and Safari
+  showed "The string did not match the expected pattern." Both apps still
+  share this DB; a dedicated Marketplace resource is still the long-term
+  split if command volume or isolation matters. `src/server/kv.ts` accepts
+  both `KV_REST_API_*` and `UPSTASH_REDIS_REST_*` names.
 - Local dev without Redis env uses an in-memory KV automatically (single-process).
 
 ## Architecture (decisions deliberate; rationale inline in code)
@@ -215,8 +218,9 @@ animations freeze in screenshots — tool environment, not a bug.
    per-variant strength/policy functions — all deliberately Stryker-excluded
    tuning knobs). Note: in-between bots still bet by spread only.
 3. House-rule toggles parked for later: baseball pay-for-3 / extra-card-on-4,
-   draw 4-with-an-ace, dedicated Redis
-   resource if game nights hit the shared free-plan limits.
+   draw 4-with-an-ace. Shared Redis with `home-game-poker` is now a paid
+   plan (2026-08-26); a dedicated resource is optional isolation, not a
+   quota unblock.
 4. **Opt-in voice chat** (parked, feasibility assessed 2026-07-30 — see
    `docs/voice-chat-feasibility.md`): Discord-style table talk for human
    players. Verdict: feasible; recommended path is Tier 1 (embedded provider —

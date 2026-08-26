@@ -8,6 +8,23 @@ export function json(data: unknown, status = 200, headers?: Record<string, strin
   });
 }
 
+/** Empty 500s become Safari's "The string did not match the expected pattern." */
+export function failedStoreResponse(err: unknown): Response {
+  const raw = err instanceof Error ? err.message : '';
+  const unavailable = /max requests limit|Redis env vars/i.test(raw);
+  return json(
+    {
+      error: {
+        code: unavailable ? 'storage-unavailable' : 'create-failed',
+        message: unavailable
+          ? 'The table service is busy — try again in a minute'
+          : raw || 'Failed to create game',
+      },
+    },
+    unavailable ? 503 : 500
+  );
+}
+
 export async function readJson(req: Request): Promise<Record<string, unknown>> {
   try {
     const body = await req.json();
