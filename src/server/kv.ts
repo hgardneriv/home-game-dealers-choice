@@ -4,10 +4,23 @@ import type { GameState } from '@/engine/types';
 /**
  * Versioned game storage with compare-and-set semantics.
  *
- * Keys: `g:{id}:v` (version counter) and `g:{id}:s` (state JSON), both with a
- * 24h TTL refreshed on every write. All mutations flow through `cas`, which
- * atomically bumps the version — concurrent writers race and exactly one wins.
+ * Keys: `dc:g:{id}:v` (version counter) and `dc:g:{id}:s` (state JSON), both
+ * with a 24h TTL refreshed on every write. The `dc:` prefix keeps this app
+ * off `home-game-poker`'s `g:{id}:*` keys on the shared Redis. All mutations
+ * flow through `cas`, which atomically bumps the version — concurrent writers
+ * race and exactly one wins.
  */
+
+/** Shared-Redis namespace. Hold'em stays on unprefixed `g:{id}:*`. */
+const KV_NS = 'dc';
+
+function versionKey(gameId: string): string {
+  return `${KV_NS}:g:${gameId}:v`;
+}
+
+function stateKey(gameId: string): string {
+  return `${KV_NS}:g:${gameId}:s`;
+}
 export interface GameKV {
   read(gameId: string): Promise<{ version: number; state: GameState } | null>;
   /** Cheap version-only read — the SSE stream polls this. */
@@ -45,22 +58,22 @@ class RedisKV implements GameKV {
 
   async read(gameId: string) {
     const [v, s] = await this.redis.mget<[string | null, string | null]>(
-      `g:${gameId}:v`,
-      `g:${gameId}:s`
+      versionKey(gameId),
+      stateKey(gameId)
     );
     if (!v || !s) return null;
     return { version: Number(v), state: JSON.parse(s) as GameState };
   }
 
   async readVersion(gameId: string) {
-    const v = await this.redis.get<string>(`g:${gameId}:v`);
+    const v = await this.redis.get<string>(versionKey(gameId));
     return v ? Number(v) : 0;
   }
 
   async cas(gameId: string, expectedVersion: number, state: GameState) {
     const result = await this.redis.eval(
       CAS_SCRIPT,
-      [`g:${gameId}:v`, `g:${gameId}:s`],
+      [versionKey(gameId), stateKey(gameId)],
       [String(expectedVersion), JSON.stringify(state), String(TTL_SECONDS)]
     );
     return Number(result);

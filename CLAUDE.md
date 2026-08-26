@@ -26,9 +26,11 @@ mixed-game nights and a host-ends-long-games path. Browser-verified per game.
   command cap (2026-08-26) after SSE `readVersion` polling (every 500ms per
   open table, ~173k commands/day) exhausted it — create then 500'd and Safari
   showed "The string did not match the expected pattern." Both apps still
-  share this DB; a dedicated Marketplace resource is still the long-term
-  split if command volume or isolation matters. `src/server/kv.ts` accepts
-  both `KV_REST_API_*` and `UPSTASH_REDIS_REST_*` names.
+  share this DB (command bill still common); keys are namespaced `dc:g:{id}:*`
+  so the two apps never read or write the same records. A dedicated
+  Marketplace resource is still the long-term split if isolation matters.
+  `src/server/kv.ts` accepts both `KV_REST_API_*` and `UPSTASH_REDIS_REST_*`
+  names.
 - Local dev without Redis env uses an in-memory KV automatically (single-process).
 
 ## Architecture (decisions deliberate; rationale inline in code)
@@ -80,7 +82,9 @@ mixed-game nights and a host-ends-long-games path. Browser-verified per game.
   are never offered (`topup.ts`). Default is 0 (off); the host can raise it.
   Quick play forces `topUps: 0`.
 - **Storage** (`src/server/kv.ts`, `store.ts`): two Redis keys per game
-  (version + state JSON, 24h TTL). ALL mutations flow through `withGame()` →
+  (`dc:g:{id}:v` + `dc:g:{id}:s`, 24h TTL). The `dc:` prefix keeps this app
+  off `home-game-poker`'s `g:{id}:*` keys on the shared DB. ALL mutations
+  flow through `withGame()` →
   read → sweep → user action → Lua-CAS write → retry (max 4).
 - **Serverless timing** (`src/server/sweep.ts`): no background processes; every
   read runs the sweep: busted-bot rebuy → bot turn (`botActAt`) → timeout

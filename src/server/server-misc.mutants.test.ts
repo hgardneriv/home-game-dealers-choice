@@ -158,7 +158,7 @@ describe('kv: RedisKV via getKV with stubbed env + mocked client', () => {
   it('read: mgets the exact version+state keys and parses both', async () => {
     upstash.mget.mockResolvedValueOnce(['3', '{"id":"abc","phase":"lobby"}']);
     const res = await getKV().read('abc');
-    expect(upstash.mget).toHaveBeenCalledWith('g:abc:v', 'g:abc:s');
+    expect(upstash.mget).toHaveBeenCalledWith('dc:g:abc:v', 'dc:g:abc:s');
     expect(res).toEqual({ version: 3, state: { id: 'abc', phase: 'lobby' } });
   });
 
@@ -176,7 +176,7 @@ describe('kv: RedisKV via getKV with stubbed env + mocked client', () => {
     const kv = getKV();
     upstash.get.mockResolvedValueOnce('7');
     expect(await kv.readVersion('abc')).toBe(7);
-    expect(upstash.get).toHaveBeenCalledWith('g:abc:v');
+    expect(upstash.get).toHaveBeenCalledWith('dc:g:abc:v');
     upstash.get.mockResolvedValueOnce(null);
     expect(await kv.readVersion('abc')).toBe(0);
   });
@@ -188,7 +188,7 @@ describe('kv: RedisKV via getKV with stubbed env + mocked client', () => {
     expect(upstash.eval).toHaveBeenCalledTimes(1);
     const [script, keys, args] = upstash.eval.mock.calls[0];
     expect(script).toContain("redis.call('GET', KEYS[1])");
-    expect(keys).toEqual(['g:abc:v', 'g:abc:s']);
+    expect(keys).toEqual(['dc:g:abc:v', 'dc:g:abc:s']);
     expect(args).toEqual(['4', JSON.stringify(fakeState), String(24 * 60 * 60)]);
   });
 
