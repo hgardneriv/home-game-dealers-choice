@@ -68,6 +68,7 @@ const grab: GameVariant = {
     result: {
       pots: [],
       revealed: {},
+      hands: {},
       descriptions: { note: 'custom-resolve' },
       showdownOrder: [],
       refunds: {},

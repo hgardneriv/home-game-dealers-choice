@@ -837,6 +837,12 @@ describe('full-hand event stream', () => {
     expect(data(evs[29]).board).toHaveLength(5);
     const pots = data(evs[29]).pots as { amount: number }[];
     expect(pots[0].amount).toBe(9); // 3 antes + 3×2 on the flop
+    expect(data(evs[29]).hands).toBeDefined();
+    expect(Object.keys(data(evs[29]).hands as Record<string, string[]>).sort()).toEqual([
+      'p0',
+      'p1',
+      'p2',
+    ]);
 
     // Nobody busted; the showdown pause is exactly 5s with no rebuy window.
     expect(types(evs)).not.toContain('player-busted');

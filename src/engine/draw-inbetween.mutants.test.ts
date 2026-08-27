@@ -294,7 +294,7 @@ describe('in-between: inert showdown surface', () => {
 
   it('resolve returns the exact empty result', () => {
     expect(inBetween.resolve!({} as HandState)).toEqual({
-      result: { pots: [], revealed: {}, descriptions: {}, showdownOrder: [], refunds: {} },
+      result: { pots: [], revealed: {}, hands: {}, descriptions: {}, showdownOrder: [], refunds: {} },
       payouts: {},
     });
   });

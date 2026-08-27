@@ -59,6 +59,7 @@ describe('hand flow', () => {
     t.checkDown();
     expect(t.state.phase).toBe('hand-over');
     expect(t.hand.result).not.toBeNull();
+    expect(Object.values(t.hand.result!.hands).every((cards) => cards.length === 5)).toBe(true);
     expect(t.totalChips()).toBe(60);
   });
 

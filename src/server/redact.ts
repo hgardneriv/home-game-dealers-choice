@@ -162,7 +162,7 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
       aceCall: inBetweenAceCall(h),
       legalActions:
         playerId && h.round.toAct === playerId ? getLegalActions(state, playerId) : null,
-      result: h.result, // public at hand end (revealed cards only)
+      result: h.result, // public at hand end (felt reveals + settled hands)
     };
   }
 

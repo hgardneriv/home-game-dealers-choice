@@ -226,6 +226,11 @@ describe('hand flow', () => {
     expect(result.pots).toEqual([{ amount: 3, winners: ['p2'], eligible: ['p1', 'p2', 'p0'] }]);
     expect(result.descriptions['p2']).toBe('Three of a Kind, Nines');
     expect(result.revealed['p2']).toEqual(['9s', '9d', '9h']);
+    expect(result.hands).toEqual({
+      p1: ['5s', '5d', 'Kh'],
+      p2: ['9s', '9d', '9h'],
+      p0: ['2s', '7d', 'Jh'],
+    });
     expect(t.stack('p2')).toBe(22); // 20 - 1 ante + 3 pot
     expect(t.state.carryPot).toBe(0);
     expect(t.state.events.filter((e) => e.type === 'pot-matched')).toHaveLength(0);

@@ -37,7 +37,7 @@ const grab: GameVariant = {
   describeScore: () => '',
   resolve() {
     return {
-      result: { pots: [], revealed: {}, descriptions: {}, showdownOrder: [], refunds: {} },
+      result: { pots: [], revealed: {}, hands: {}, descriptions: {}, showdownOrder: [], refunds: {} },
       payouts: {},
     };
   },

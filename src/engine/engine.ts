@@ -976,6 +976,8 @@ function finishHand(
     kind,
     pots: resolution.result.pots,
     revealed: resolution.result.revealed,
+    hands: resolution.result.hands,
+    showdownOrder: resolution.result.showdownOrder,
     descriptions: resolution.result.descriptions,
     refunds: resolution.result.refunds,
     board: [...hand.board],

@@ -373,7 +373,12 @@ describe('showdown order and auto-muck', () => {
     expect(result.showdownOrder[0]).toBe('p1'); // last aggressor
     expect(result.revealed['p1']).toBeDefined();
     expect(result.revealed['p2']).toBeDefined(); // beats p1's tens
-    expect(result.revealed['p0']).toBeUndefined(); // king-high mucks
+    expect(result.revealed['p0']).toBeUndefined(); // king-high mucks on the felt
+    expect(result.hands).toEqual({
+      p0: ['2c', '7d'],
+      p1: ['Ts', 'Th'],
+      p2: ['As', 'Ad'],
+    });
     expect(result.descriptions['p2']).toBe('Pair of Aces');
     expect(result.pots[0].winners).toEqual(['p2']);
   });
