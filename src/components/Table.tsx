@@ -67,16 +67,15 @@ const LAYOUTS: Record<string, Point[]> = {
 };
 
 /**
- * Board + pot cluster. Same marks as home-game-poker Hold'em — long table
- * 54%, short table 50%. Tune per-variant later if a game needs its own Y.
+ * Board + pot cluster. Slightly below geometric center so the pot
+ * clears the hero and the wordmark can hang in the open felt under
+ * the top seat. Same stack at every canvas size — landscape used to
+ * pin the mark on the board (it read as a watermark and overlapped).
  */
 const CENTERS: Record<string, Point> = {
   portrait: { x: 50, y: 54 },
-  landscape: { x: 50, y: 50 },
+  landscape: { x: 50, y: 54 },
 };
-
-/** Landscape watermark — same point as the board so the mark sits on the slots. */
-const LOGO_LANDSCAPE: Point = { x: 50, y: 50 };
 
 /** Chip lands on the nameplate then vanishes — keep under the 2.5s fold-win hold. */
 const AWARD_ARRIVE_MS = 1500;
@@ -156,18 +155,18 @@ function FeltLogo({ marquee }: { marquee: string }) {
         }}
       />
       <div
-        className="relative text-2xl leading-none tracking-[0.5em] text-black/60 sm:text-[28px]"
+        className="relative whitespace-nowrap text-2xl leading-none tracking-[0.5em] text-black/60 sm:text-[28px]"
         style={{ paddingLeft: '0.5em' }}
       >
         ♠&nbsp;♥&nbsp;♦&nbsp;♣
       </div>
       <div
-        className="relative mt-1 bg-gradient-to-b from-amber-100 via-amber-300/95 to-amber-600/85 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
+        className="relative mt-1 whitespace-nowrap bg-gradient-to-b from-amber-100 via-amber-300/95 to-amber-600/85 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
         style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
       >
         HOME GAME
       </div>
-      <div className="relative mt-1 flex items-center justify-center gap-2">
+      <div className="relative mt-1 flex items-center justify-center gap-2 whitespace-nowrap">
         <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
         <span className="text-[10px] tracking-[0.4em] text-amber-100/60 sm:text-xs" style={{ paddingLeft: '0.4em' }}>
           {marquee}
@@ -272,7 +271,6 @@ export function Table({ game }: { game: GameApi }) {
     ? discardAnnouncementCopy(state.players[discardNote.playerId]?.name ?? 'Player', discardNote.count)
     : null;
   const showDrawBanners = !showHandBanner && (myDrawTurn || !!discardLine);
-  const hideLogo = showHandBanner || showDrawBanners;
   const payouts: Record<string, number> = {};
   if (result) {
     for (const pot of result.pots) {
@@ -320,32 +318,18 @@ export function Table({ game }: { game: GameApi }) {
         style={{ borderRadius: 'inherit' }}
       />
 
-      {/* Short table: wordmark as a center watermark behind the slots.
-          Hidden while a result or draw banner is up so that chrome can sit
-          in this band. */}
-      {orientation === 'landscape' && !hideLogo && (
-        <div
-          className="pointer-events-none absolute z-0 -translate-x-1/2 -translate-y-1/2"
-          style={{ left: `${LOGO_LANDSCAPE.x}%`, top: `${LOGO_LANDSCAPE.y}%` }}
-        >
-          <FeltLogo marquee={marquee} />
-        </div>
-      )}
-
-      {/* Board + pot. Long-table wordmark hangs just above the slots (out of
-          flow) so logo→cards stays tight while cards→pot keeps a real gap. */}
+      {/* Board + pot. Wordmark hangs just above the slots (out of flow) so
+          logo→cards stays tight while cards→pot keeps a real gap — same
+          stack on phone, narrow, and full-screen. Winner / draw copy
+          overlays the mark (does not move it): one line covers the
+          marquee, extra lines grow up over HOME GAME. */}
       <div
         className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
         style={{ left: `${center.x}%`, top: `${center.y}%` }}
       >
-        {orientation === 'portrait' && !hideLogo && (
-          <div className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2">
-            <FeltLogo marquee={marquee} />
-          </div>
-        )}
-        {/* Winner / last-hand / draw-street copy sits under HOME GAME (the
-            old marquee band). Extra winners grow up into the open felt —
-            never over hole cards. */}
+        <div className="pointer-events-none absolute bottom-full left-1/2 z-0 mb-1 w-max -translate-x-1/2">
+          <FeltLogo marquee={marquee} />
+        </div>
         <AnimatePresence>
           {(showHandBanner || showDrawBanners) && (
             <motion.div
@@ -358,14 +342,8 @@ export function Table({ game }: { game: GameApi }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0 }}
               transition={{ delay: showHandBanner ? 0.35 : 0 }}
-              className="absolute bottom-full left-1/2 z-30 mb-2 flex w-max max-w-[min(86vw,28rem)] -translate-x-1/2 flex-col items-center"
+              className="absolute bottom-full left-1/2 z-30 mb-1 flex w-max max-w-[min(86vw,28rem)] -translate-x-1/2 flex-col items-center"
             >
-              <div
-                className="mb-1 bg-gradient-to-b from-amber-100 via-amber-300/95 to-amber-600/85 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
-                style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
-              >
-                HOME GAME
-              </div>
               <div className="flex flex-col items-center rounded-xl border border-amber-400/40 bg-black/80 px-4 py-2 text-center shadow-xl">
                 {winnerLines.map((line) => (
                   <span key={line} className="text-sm font-semibold text-amber-300">
