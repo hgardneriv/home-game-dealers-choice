@@ -14,6 +14,7 @@ import { GameOverScreen } from './GameOverScreen';
 import { DrawSelectProvider } from './DrawSelect';
 import type { GameApi } from '@/hooks/useGame';
 import { reviewingLastHand } from '@/engine/types';
+import { clearLastGameId, rememberedTableAction, writeLastGameId } from '@/hooks/lastGame';
 
 /** Announces table events (players leaving/being kicked) to everyone else. */
 function EventNotices({ game }: { game: GameApi }) {
@@ -114,6 +115,14 @@ export function GameRoom({ gameId }: { gameId: string }) {
     !!state?.yourId && state.phase === 'playing' && state.hand?.toAct === state.yourId
   );
 
+  // Remember this table so home can offer a link back. A dead table, a leave,
+  // or a kick clears it. Play Now on the home page stays available either way.
+  useEffect(() => {
+    const memory = rememberedTableAction(gameId, { error: !!error, state });
+    if (memory.action === 'write') writeLastGameId(memory.gameId);
+    else if (memory.action === 'clear') clearLastGameId();
+  }, [error, state, gameId]);
+
   if (error) {
     return (
       <main className="flex min-h-dvh items-center justify-center p-6 text-center">
@@ -197,7 +206,7 @@ export function GameRoom({ gameId }: { gameId: string }) {
       <main className="relative flex h-dvh flex-col bg-zinc-950">
         <header className="flex items-center justify-between gap-2 px-4 py-2 text-sm text-white">
           <div className="flex items-baseline gap-2">
-            <span className="font-semibold">🃏 Home Game</span>
+            <span className="whitespace-nowrap font-semibold">🃏 Poker Party</span>
             <span className="text-xs text-white/50">
               Ante ${state.config.ante} · min ${state.config.minBet}
               {state.hand ? ` · hand #${state.hand.handNo}` : ''}

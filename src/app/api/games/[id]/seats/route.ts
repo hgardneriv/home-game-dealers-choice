@@ -1,6 +1,7 @@
 import { withGame } from '@/server/store';
 import { playerIdFromRequest } from '@/server/identity';
 import { json, readJson, storeResponse } from '@/server/api';
+import { rateLimited } from '@/server/ratelimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,8 @@ export async function POST(
   const byId = playerIdFromRequest(req, gameId);
   if (!byId)
     return json({ error: { code: 'unauthorized', message: 'Not in this game' } }, 401);
+  const blocked = await rateLimited('mutate', byId);
+  if (blocked) return blocked;
 
   const body = await readJson(req);
   const op = String(body.op ?? '');

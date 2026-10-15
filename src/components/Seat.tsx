@@ -7,6 +7,7 @@ import { getVariant } from '@/engine/variants/registry';
 import { handLabel } from '@/engine/hand-label';
 import { PlayingCard } from './PlayingCard';
 import { useDrawSelect } from './DrawSelect';
+import { faceUpHoleCards } from './seat-cards';
 
 /** Must match PotAward travel in Table — stack pops when the chip arrives. */
 const AWARD_ARRIVE_MS = 1500;
@@ -43,16 +44,19 @@ export function Seat({
   // Must run on empty seats — seating a bot must not change the hook count.
   const draw = useDrawSelect();
   const awardKey = hand?.result ? `${hand.handNo}-${payout}` : '';
+  const [awardSnap, setAwardSnap] = useState(awardKey);
   const [landed, setLanded] = useState(!payout);
   const [stackFlash, setStackFlash] = useState(false);
-  useEffect(() => {
-    if (!payout || !awardKey) {
-      setLanded(true);
-      setStackFlash(false);
-      return;
-    }
-    setLanded(false);
+  // Reset the chip-flight when the award changes. Adjusting during render
+  // (same pattern as ActionBar's turn key) keeps the timers out of a
+  // synchronous setState in the effect.
+  if (awardSnap !== awardKey) {
+    setAwardSnap(awardKey);
+    setLanded(!payout);
     setStackFlash(false);
+  }
+  useEffect(() => {
+    if (!payout || !awardKey) return;
     const land = window.setTimeout(() => {
       setLanded(true);
       setStackFlash(true);
@@ -79,11 +83,10 @@ export function Seat({
   const isWinner =
     (hand?.result?.pots.some((p) => p.winners.includes(player.id)) ?? false) &&
     state.phase !== 'playing';
-  const revealed = hand?.result?.revealed[player.id];
   // Empty = nothing to show (no-peek hides even your own down cards) — fall
-  // back to card backs rather than an empty seat.
-  const showCardsRaw = isYou ? hand?.myCards : revealed;
-  const showCards = showCardsRaw && showCardsRaw.length > 0 ? showCardsRaw : null;
+  // back to card backs rather than an empty seat. At showdown, opponents
+  // who stayed turn `result.hands` (any length). Folded seats stay down.
+  const showCards = faceUpHoleCards(isYou, player.id, hand?.myCards, hand?.result, folded) ?? null;
   const description = hand?.result?.descriptions[player.id];
 
   const timerFraction = (() => {

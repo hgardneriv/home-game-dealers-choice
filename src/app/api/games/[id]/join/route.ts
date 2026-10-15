@@ -3,6 +3,7 @@ import { withGame } from '@/server/store';
 import { buildSetCookie, playerIdFromRequest } from '@/server/identity';
 import { json, readJson, storeResponse } from '@/server/api';
 import { redactForPlayer } from '@/server/redact';
+import { clientIp, rateLimited } from '@/server/ratelimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,8 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
+  const blocked = await rateLimited('join', clientIp(req));
+  if (blocked) return blocked;
   const { id: gameId } = await params;
   const body = await readJson(req);
   const name = String(body.name ?? '').trim().slice(0, 20);
