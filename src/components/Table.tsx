@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { GameApi } from '@/hooks/useGame';
 import { useOrientation } from '@/hooks/useOrientation';
@@ -16,22 +16,41 @@ import {
 } from './draw-banners';
 
 /**
- * Felt texture: a sparse diagonal tile of dark suit motifs baked into a
- * data-URI SVG. Static backgrounds rasterize once — deliberately no
- * filters/blurs anywhere on the table (they wedge older iOS GPUs).
+ * Party felt: four-suit motif + static confetti/streamers in a data-URI
+ * SVG. Backgrounds rasterize once — no filters/blurs on the table
+ * (they wedge older iOS GPUs).
  */
 const FELT_TILE = `url("data:image/svg+xml,${encodeURIComponent(
-  `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'>` +
-    `<g fill='#000000' fill-opacity='0.06'>` +
-    `<path transform='translate(16,12)' d='${SUIT_PATH.s}'/>` +
-    `<path transform='translate(76,72)' d='${SUIT_PATH.c}'/>` +
-    `</g></svg>`
+  `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'>` +
+    `<g fill='#000000' fill-opacity='0.075'>` +
+    `<path transform='translate(18,16)' d='${SUIT_PATH.s}'/>` +
+    `<path transform='translate(108,22)' d='${SUIT_PATH.c}'/>` +
+    `<path transform='translate(24,102)' d='${SUIT_PATH.d}'/>` +
+    `<path transform='translate(96,88)' d='${SUIT_PATH.h}'/>` +
+    `</g>` +
+    `<g fill='none' stroke='#d8b45c' stroke-opacity='0.14' stroke-width='1.4' stroke-linecap='round'>` +
+    `<path d='M8 52 Q36 38 62 56'/>` +
+    `<path d='M92 18 Q118 8 146 24'/>` +
+    `<path d='M70 118 Q98 132 128 116'/>` +
+    `</g>` +
+    `<g>` +
+    `<circle cx='72' cy='44' r='2.4' fill='#f0d78c' fill-opacity='0.22'/>` +
+    `<circle cx='148' cy='70' r='1.7' fill='#e8a07a' fill-opacity='0.20'/>` +
+    `<circle cx='54' cy='138' r='2' fill='#d8b45c' fill-opacity='0.20'/>` +
+    `<circle cx='132' cy='128' r='1.8' fill='#f5e6c8' fill-opacity='0.18'/>` +
+    `<circle cx='12' cy='68' r='1.5' fill='#e07a7a' fill-opacity='0.16'/>` +
+    `<circle cx='88' cy='78' r='1.4' fill='#f0d78c' fill-opacity='0.18'/>` +
+    `<path d='M40 80 l2.4 3.2 -2.4 3.2 -2.4-3.2 z' fill='#d8b45c' fill-opacity='0.18'/>` +
+    `<path d='M118 98 l2.1 2.8 -2.1 2.8 -2.1-2.8 z' fill='#f0d78c' fill-opacity='0.16'/>` +
+    `</g>` +
+    `</svg>`
 )}")`;
 
 const FELT_LAYERS = [
-  'radial-gradient(ellipse at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0) 60%)',
+  'radial-gradient(ellipse at 50% 30%, rgba(255,220,120,0.16) 0%, rgba(255,255,255,0) 56%)',
+  'radial-gradient(ellipse at 18% 72%, rgba(255,170,90,0.07) 0%, rgba(255,255,255,0) 42%)',
   FELT_TILE,
-  'radial-gradient(ellipse at 50% 38%, #15714a 0%, #0d5334 45%, #05301d 100%)',
+  'radial-gradient(ellipse at 50% 38%, #1fa86c 0%, #0f6a40 46%, #062918 100%)',
 ].join(', ');
 
 /** Mahogany rail: top sheen + fine grain streaks over a deep warm radial. */
@@ -144,34 +163,105 @@ function PotAward({
   );
 }
 
+const FELT_SUITS: { suit: 's' | 'h' | 'd' | 'c'; red: boolean }[] = [
+  { suit: 's', red: false },
+  { suit: 'h', red: true },
+  { suit: 'd', red: true },
+  { suit: 'c', red: false },
+];
+
+/** Glossy suit — SVG gradients only, no CSS filter. */
+function FeltSuit({
+  suit,
+  red,
+  gid,
+}: {
+  suit: 's' | 'h' | 'd' | 'c';
+  red: boolean;
+  gid: string;
+}) {
+  const fill = `${gid}-fill`;
+  return (
+    <span className="relative inline-flex h-6 w-6 items-center justify-center sm:h-8 sm:w-8">
+      <span
+        className="absolute inset-[-30%] rounded-full"
+        style={{
+          background: red
+            ? 'radial-gradient(closest-side, rgba(255,196,90,0.42) 0%, rgba(255,196,90,0) 74%)'
+            : 'radial-gradient(closest-side, rgba(255,214,120,0.26) 0%, rgba(255,214,120,0) 74%)',
+        }}
+      />
+      <svg viewBox="0 0 24 24" className="relative h-full w-full" aria-hidden>
+        <defs>
+          <linearGradient id={fill} x1="0.28" y1="0" x2="0.72" y2="1">
+            {red ? (
+              <>
+                <stop offset="0%" stopColor="#ff9a9a" />
+                <stop offset="36%" stopColor="#e11d2a" />
+                <stop offset="100%" stopColor="#6d0b12" />
+              </>
+            ) : (
+              <>
+                <stop offset="0%" stopColor="#6a6a6a" />
+                <stop offset="38%" stopColor="#1c1c1c" />
+                <stop offset="100%" stopColor="#050505" />
+              </>
+            )}
+          </linearGradient>
+          <clipPath id={`${gid}-clip`}>
+            <path d={SUIT_PATH[suit]} />
+          </clipPath>
+        </defs>
+        <path d={SUIT_PATH[suit]} fill={`url(#${fill})`} />
+        <ellipse
+          cx="9"
+          cy="7.5"
+          rx="5.2"
+          ry="4.2"
+          fill="#fff"
+          opacity="0.38"
+          clipPath={`url(#${gid}-clip)`}
+        />
+      </svg>
+    </span>
+  );
+}
+
 function FeltLogo({ marquee }: { marquee: string }) {
+  const rawId = useId().replace(/:/g, '');
+  const word = {
+    fontFamily: 'var(--font-cinzel), Georgia, "Times New Roman", serif',
+    paddingLeft: '0.14em',
+  } as const;
   return (
     <div className="pointer-events-none relative select-none text-center">
       <div
-        className="absolute left-1/2 top-1/2 h-48 w-[26rem] max-w-[80vw] -translate-x-1/2 -translate-y-1/2"
+        className="absolute left-1/2 top-[62%] h-44 w-[28rem] max-w-[80vw] -translate-x-1/2 -translate-y-1/2"
         style={{
           background:
-            'radial-gradient(closest-side, rgba(216,180,92,0.16) 0%, rgba(216,180,92,0) 100%)',
+            'radial-gradient(closest-side, rgba(255,214,110,0.26) 0%, rgba(216,180,92,0) 100%)',
         }}
       />
-      <div
-        className="relative whitespace-nowrap text-2xl leading-none tracking-[0.5em] text-black/60 sm:text-[28px]"
-        style={{ paddingLeft: '0.5em' }}
-      >
-        ♠&nbsp;♥&nbsp;♦&nbsp;♣
+      <div className="relative flex items-center justify-center gap-1.5 sm:gap-2">
+        {FELT_SUITS.map(({ suit, red }) => (
+          <FeltSuit key={suit} suit={suit} red={red} gid={`${rawId}-${suit}`} />
+        ))}
       </div>
       <div
-        className="relative mt-1 whitespace-nowrap bg-gradient-to-b from-amber-100 via-amber-300/95 to-amber-600/85 bg-clip-text text-xl font-black tracking-[0.3em] text-transparent sm:text-3xl"
-        style={{ fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: '0.3em' }}
+        className="relative mt-0.5 whitespace-nowrap text-[1.55rem] font-bold tracking-[0.14em] text-[#e4c05c] sm:text-[2.2rem] sm:tracking-[0.18em]"
+        style={word}
       >
-        HOME GAME
+        POKER PARTY
       </div>
-      <div className="relative mt-1 flex items-center justify-center gap-2 whitespace-nowrap">
-        <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
-        <span className="text-[10px] tracking-[0.4em] text-amber-100/60 sm:text-xs" style={{ paddingLeft: '0.4em' }}>
+      <div className="relative mt-0.5 flex items-center justify-center gap-2 whitespace-nowrap">
+        <span className="h-px w-10 bg-gradient-to-r from-transparent to-amber-200/55 sm:w-16" />
+        <span
+          className="text-[11px] tracking-[0.38em] text-amber-100/70 sm:text-[13px] sm:tracking-[0.42em]"
+          style={{ paddingLeft: '0.38em' }}
+        >
           {marquee}
         </span>
-        <span className="h-px w-8 bg-amber-200/40 sm:w-12" />
+        <span className="h-px w-10 bg-gradient-to-l from-transparent to-amber-200/55 sm:w-16" />
       </div>
     </div>
   );
@@ -304,8 +394,8 @@ export function Table({ game }: { game: GameApi }) {
         style={{
           borderRadius: 'inherit',
           backgroundImage: FELT_LAYERS,
-          backgroundSize: 'auto, 120px 120px, auto',
-          backgroundRepeat: 'no-repeat, repeat, no-repeat',
+          backgroundSize: 'auto, auto, 120px 120px, auto',
+          backgroundRepeat: 'no-repeat, no-repeat, repeat, no-repeat',
         }}
       />
       {/* Double gold pinstripe inside the rail — the only ornament, kept clean */}
@@ -322,12 +412,12 @@ export function Table({ game }: { game: GameApi }) {
           logo→cards stays tight while cards→pot keeps a real gap — same
           stack on phone, narrow, and full-screen. Winner / draw copy
           overlays the mark (does not move it): one line covers the
-          marquee, extra lines grow up over HOME GAME. */}
+          marquee, extra lines grow up over POKER PARTY. */}
       <div
         className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
         style={{ left: `${center.x}%`, top: `${center.y}%` }}
       >
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-0 mb-1 w-max -translate-x-1/2">
+        <div className="pointer-events-none absolute bottom-full left-1/2 z-0 mb-[18px] w-max -translate-x-1/2 sm:mb-[22px]">
           <FeltLogo marquee={marquee} />
         </div>
         <AnimatePresence>
@@ -342,7 +432,7 @@ export function Table({ game }: { game: GameApi }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0 }}
               transition={{ delay: showHandBanner ? 0.35 : 0 }}
-              className="absolute bottom-full left-1/2 z-30 mb-1 flex w-max max-w-[min(86vw,28rem)] -translate-x-1/2 flex-col items-center"
+              className="absolute bottom-full left-1/2 z-30 mb-[18px] flex w-max max-w-[min(86vw,28rem)] -translate-x-1/2 flex-col items-center sm:mb-[22px]"
             >
               <div className="flex flex-col items-center rounded-xl border border-amber-400/40 bg-black/80 px-4 py-2 text-center shadow-xl">
                 {winnerLines.map((line) => (
@@ -396,13 +486,13 @@ export function Table({ game }: { game: GameApi }) {
                                 : 'ring-red-400 shadow-[0_0_14px_rgba(248,113,113,0.7)]'
                           }`}
                         >
-                          <PlayingCard card={card} size="md" dealt />
+                          <PlayingCard card={card} size="board" dealt />
                         </div>
                       ) : (
                         <PlayingCard
                           key={card}
                           card={card}
-                          size="md"
+                          size="board"
                           dealt
                           aceCall={i === 0 ? firstAceCall : undefined}
                         />
@@ -415,7 +505,7 @@ export function Table({ game }: { game: GameApi }) {
                   [0, 1, 2, 3, 4].map((i) => {
                     const card = hand?.board[i];
                     return card ? (
-                      <PlayingCard key={card} card={card} size="md" dealt />
+                      <PlayingCard key={card} card={card} size={variant?.layoutHint === 'board' ? 'board' : 'md'} dealt />
                     ) : (
                       <EmptySlot key={`slot${i}`} />
                     );

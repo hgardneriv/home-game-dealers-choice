@@ -206,7 +206,7 @@ export function GameRoom({ gameId }: { gameId: string }) {
       <main className="relative flex h-dvh flex-col bg-zinc-950">
         <header className="flex items-center justify-between gap-2 px-4 py-2 text-sm text-white">
           <div className="flex items-baseline gap-2">
-            <span className="font-semibold">🃏 Home Game</span>
+            <span className="whitespace-nowrap font-semibold">🃏 Poker Party</span>
             <span className="text-xs text-white/50">
               Ante ${state.config.ante} · min ${state.config.minBet}
               {state.hand ? ` · hand #${state.hand.handNo}` : ''}

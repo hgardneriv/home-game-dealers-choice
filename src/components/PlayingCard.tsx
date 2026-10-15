@@ -22,6 +22,8 @@ export const SUIT_PATH: Record<string, string> = {
 const SIZE_CLASSES = {
   sm: 'w-8 sm:w-10',
   md: 'w-12 sm:w-14',
+  /** Community / board — a step up from md, still smaller than a seat's lg. */
+  board: 'w-[3.375rem] sm:w-16',
   lg: 'w-14 sm:w-[72px]',
 };
 
@@ -35,7 +37,7 @@ export function PlayingCard({
 }: {
   /** e.g. 'As'; undefined renders a face-down card. */
   card?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'board' | 'lg';
   /** Animate in (deal/flip) when the card first mounts. */
   dealt?: boolean;
   /** Gold WILD band (baseball 3s/9s). */
