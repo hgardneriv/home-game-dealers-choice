@@ -44,16 +44,19 @@ export function Seat({
   // Must run on empty seats — seating a bot must not change the hook count.
   const draw = useDrawSelect();
   const awardKey = hand?.result ? `${hand.handNo}-${payout}` : '';
+  const [awardSnap, setAwardSnap] = useState(awardKey);
   const [landed, setLanded] = useState(!payout);
   const [stackFlash, setStackFlash] = useState(false);
-  useEffect(() => {
-    if (!payout || !awardKey) {
-      setLanded(true);
-      setStackFlash(false);
-      return;
-    }
-    setLanded(false);
+  // Reset the chip-flight when the award changes. Adjusting during render
+  // (same pattern as ActionBar's turn key) keeps the timers out of a
+  // synchronous setState in the effect.
+  if (awardSnap !== awardKey) {
+    setAwardSnap(awardKey);
+    setLanded(!payout);
     setStackFlash(false);
+  }
+  useEffect(() => {
+    if (!payout || !awardKey) return;
     const land = window.setTimeout(() => {
       setLanded(true);
       setStackFlash(true);
