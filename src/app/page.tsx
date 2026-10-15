@@ -1,4 +1,5 @@
 import { CreateGame } from '@/components/CreateGame';
+import { ReturnToTable } from '@/components/ReturnToTable';
 
 export default function Home() {
   return (
@@ -10,6 +11,7 @@ export default function Home() {
           the game.
         </p>
       </div>
+      <ReturnToTable />
       <CreateGame />
     </main>
   );
