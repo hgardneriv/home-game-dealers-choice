@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Table } from '@/engine/test-utils';
-import type { Player } from '@/engine/types';
+import { isRematchTable, type Player } from '@/engine/types';
 import { redactForPlayer } from './redact';
 
 /**
@@ -282,5 +282,21 @@ describe('players, lobby state, and top-level fields', () => {
 
     delete (t.state as { resultsShown?: boolean }).resultsShown;
     expect(redactForPlayer(t.state, 'p0').resultsShown).toBe(true);
+  });
+
+  it('a pre-fix quick-play view with a seated guest is still a rematch table', () => {
+    const t = new Table(2);
+    t.state.hosted = false;
+    const view = redactForPlayer(t.state, 'p0');
+    expect(view.hosted).toBe(false);
+    expect(view.players.p1.seat).toBe(1);
+    expect(view.players.p1.isBot).toBe(false);
+    expect(isRematchTable(view)).toBe(true);
+
+    const solo = new Table(1);
+    solo.state.hosted = false;
+    solo.apply({ type: 'addBot', byId: 'p0' });
+    const bots = redactForPlayer(solo.state, 'p0');
+    expect(isRematchTable(bots)).toBe(false);
   });
 });

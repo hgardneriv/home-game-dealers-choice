@@ -649,8 +649,9 @@ describe('hosted rematch', () => {
     t.apply({ type: 'playAgain', playerId: 'p1' });
     expect(t.state.phase).toBe('lobby');
 
-    const quick = new Table(2, { config: { topUps: 0 } });
+    const quick = new Table(1, { config: { topUps: 0 } });
     quick.state.hosted = false;
+    quick.apply({ type: 'addBot', byId: 'p0' });
     quick.start();
     quick.apply({ type: 'endGame', byId: 'p0' });
     expectError(quick.tryApply({ type: 'playAgain', playerId: 'p0' }), 'bad-phase');

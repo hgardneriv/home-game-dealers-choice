@@ -23,6 +23,22 @@ export function reviewingLastHand(state: {
   return state.phase === 'ended' && !state.resultsShown && state.hand?.result != null;
 }
 
+/**
+ * Play Again rematches this same table when it started as an invite-link
+ * night, or when Play Now later seated an invited human. A pending request
+ * is not enough; kicked / left guests do not count (they have no seat).
+ */
+export function isRematchTable(state: {
+  hosted?: boolean;
+  hostId: string;
+  players: Record<string, { isBot: boolean; seat: number | null }>;
+}): boolean {
+  if (state.hosted !== false) return true;
+  return Object.entries(state.players).some(
+    ([id, p]) => !p.isBot && p.seat !== null && id !== state.hostId
+  );
+}
+
 export type PlayerStatus = 'seated' | 'away' | 'busted' | 'kicked' | 'left';
 
 export interface TableConfig {

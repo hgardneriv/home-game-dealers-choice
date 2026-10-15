@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import type { GameApi } from '@/hooks/useGame';
+import { isRematchTable } from '@/engine/types';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -81,7 +82,7 @@ export function GameOverScreen({ game }: { game: GameApi }) {
           })}
         </div>
 
-        {state.hosted ? (
+        {isRematchTable(state) ? (
           <div className="flex w-full flex-col items-center gap-2">
             <button
               className={playAgainClass}
