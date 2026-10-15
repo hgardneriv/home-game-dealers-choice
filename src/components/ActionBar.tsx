@@ -9,6 +9,7 @@ import { LeaveButton } from './LeaveButton';
 import { useDrawSelect } from './DrawSelect';
 import { reviewingLastHand } from '@/engine/types';
 import { drawPromptCopy } from './draw-banners';
+import { revealWindowOpen } from './reveal-window';
 
 export function ActionBar({ game }: { game: GameApi }) {
   const toast = useToast();
@@ -37,14 +38,7 @@ export function ActionBar({ game }: { game: GameApi }) {
   // While the previous in-between turn's card is on display, hold the next
   // wager (matches the engine holding bots back for the same window).
   const revealCfg = hand ? getVariant(hand.variant).resultReveal : undefined;
-  const revealActive = (() => {
-    if (!revealCfg) return false;
-    let latestAt: number | null = null;
-    for (const e of state.events) {
-      if (e.type === revealCfg.eventType && (revealCfg.shows?.(e.data) ?? true)) latestAt = e.at;
-    }
-    return latestAt !== null && game.serverNow() - latestAt < revealCfg.ms;
-  })();
+  const revealActive = revealWindowOpen(state.events, game.serverNow(), revealCfg);
 
   // Tick while a countdown is visible (busted re-entry hold, dealer choosing,
   // an in-between reveal blocking the wager buttons).
