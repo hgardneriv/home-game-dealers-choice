@@ -5,6 +5,7 @@ import { applyAction, createGame, normalizeConfig } from '@/engine/engine';
 import type { TableConfig } from '@/engine/types';
 import { getKV } from './kv';
 import { dueSweepAction } from './sweep';
+import { extractStatsDelta, persistStatsDeltas, type StatsDelta } from './stats';
 
 /**
  * The single mutation pipeline: read -> sweep (timers/bots/next-hand) ->
@@ -21,6 +22,21 @@ export type StoreResult =
   | { ok: false; status: number; error: EngineError | { code: string; message: string } };
 
 const ctx = () => ({ now: Date.now(), randInt: (n: number) => randomInt(n) });
+
+function pushDelta(deltas: StatsDelta[], prev: GameState, next: GameState): void {
+  const delta = extractStatsDelta(prev, next);
+  if (delta) deltas.push(delta);
+}
+
+/** Stats are outside the hand. A failed write must not fail the CAS. */
+async function saveStats(deltas: StatsDelta[]): Promise<void> {
+  if (deltas.length === 0) return;
+  try {
+    await persistStatsDeltas(deltas);
+  } catch (err) {
+    console.error('[stats] persist failed', err);
+  }
+}
 
 /**
  * Read the game, apply any due sweep actions (persisting them), then apply an
@@ -40,6 +56,7 @@ export async function withGame(
 
     let state = entry.state;
     let dirty = false;
+    const deltas: StatsDelta[] = [];
 
     // Run due server actions (bot turns chain until the next one isn't due yet).
     for (let i = 0; i < MAX_SWEEPS_PER_CALL; i++) {
@@ -48,6 +65,7 @@ export async function withGame(
       if (!due) break;
       const res = applyAction(state, due, c);
       if (!res.ok) break; // e.g. lost a race with a player action; harmless
+      pushDelta(deltas, state, res.state);
       state = res.state;
       dirty = true;
     }
@@ -61,6 +79,7 @@ export async function withGame(
       } else if (built) {
         const res = applyAction(state, built, ctx());
         if (res.ok) {
+          pushDelta(deltas, state, res.state);
           state = res.state;
           dirty = true;
         } else {
@@ -78,6 +97,7 @@ export async function withGame(
     state.version = entry.version + 1;
     const newVersion = await kv.cas(gameId, entry.version, state);
     if (newVersion !== 0) {
+      await saveStats(deltas);
       if (userError) return { ok: false, status: userError.status ?? 400, error: userError };
       return { ok: true, state, version: newVersion };
     }

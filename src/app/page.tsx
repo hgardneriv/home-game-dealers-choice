@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { CreateGame } from '@/components/CreateGame';
 import { ReturnToTable } from '@/components/ReturnToTable';
 
@@ -14,6 +15,15 @@ export default function Home() {
       </div>
       <ReturnToTable />
       <CreateGame />
+      <footer className="text-center text-xs opacity-50">
+        <Link href="/stats" className="underline">
+          Stats
+        </Link>
+        {' · '}
+        <Link href="/privacy" className="underline">
+          Privacy
+        </Link>
+      </footer>
     </main>
   );
 }
