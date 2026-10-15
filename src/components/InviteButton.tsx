@@ -1,31 +1,35 @@
 'use client';
 
 import { useState } from 'react';
+import { inviteSharePayload } from '@/hooks/invite';
 
 export function InviteButton({ gameId }: { gameId: string }) {
   const [copied, setCopied] = useState(false);
 
   const invite = async () => {
     const url = `${window.location.origin}/game/${gameId}`;
-    // Native share sheet on phones (SMS, WhatsApp, etc.); clipboard elsewhere.
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Poker night!',
-          text: 'Join my poker table:',
-          url,
-        });
-        return;
-      } catch {
-        // user dismissed the sheet — fall through to clipboard
-      }
-    }
+    const share = inviteSharePayload(url);
     try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      // Browser share sheet: title + text, with the table URL on the next
+      // line. No separate `url` field — Messages would preview that first
+      // and drop the sentence under it. Clipboard fallback stays the bare URL.
+      if (navigator.share) {
+        try {
+          await navigator.share(share);
+          return;
+        } catch {
+          // user dismissed the sheet — fall through to clipboard
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        prompt('Copy this link:', url);
+      }
     } catch {
-      prompt('Copy this link:', url);
+      // keep the tap from becoming an unhandled rejection (Next overlay)
     }
   };
 
