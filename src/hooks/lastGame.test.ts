@@ -28,9 +28,20 @@ function mockStorage() {
 }
 
 const seated = {
+  phase: 'playing' as const,
+  resultsShown: false,
+  hand: null as { result: unknown } | null,
   yourId: 'h',
-  players: { h: { status: 'seated', seat: 0 } },
+  players: { h: { status: 'seated', seat: 0 as number | null } },
   seatRequests: [] as { playerId: string }[],
+};
+
+const standings = {
+  ...seated,
+  phase: 'ended' as const,
+  resultsShown: true,
+  hand: { result: { pots: [] } },
+  players: { h: { status: 'busted', seat: 0 as number | null } },
 };
 
 describe('lastGame storage', () => {
@@ -73,7 +84,11 @@ describe('lastGame storage', () => {
 });
 
 describe('rememberedTableAction', () => {
-  it('writes while you are seated, waiting, or looking at an ended night', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('writes while a game is in progress, including a bust and a pending seat', () => {
     expect(rememberedTableAction('g1', { error: false, state: seated })).toEqual({
       action: 'write',
       gameId: 'g1',
@@ -82,6 +97,9 @@ describe('rememberedTableAction', () => {
       rememberedTableAction('g1', {
         error: false,
         state: {
+          phase: 'lobby',
+          resultsShown: false,
+          hand: null,
           yourId: 'g',
           players: { g: { status: 'seated', seat: null } },
           seatRequests: [{ playerId: 'g' }],
@@ -97,6 +115,39 @@ describe('rememberedTableAction', () => {
         },
       })
     ).toEqual({ action: 'write', gameId: 'g1' });
+    // Last hand still on the felt — not the standings screen.
+    expect(
+      rememberedTableAction('g1', {
+        error: false,
+        state: {
+          ...seated,
+          phase: 'ended',
+          resultsShown: false,
+          hand: { result: { pots: [] } },
+        },
+      })
+    ).toEqual({ action: 'write', gameId: 'g1' });
+  });
+
+  it('does not offer a return link once the standings are up', () => {
+    expect(rememberedTableAction('g1', { error: false, state: standings })).toEqual({
+      action: 'clear',
+    });
+    expect(
+      rememberedTableAction('g1', {
+        error: false,
+        state: { ...seated, phase: 'ended', hand: null },
+      })
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('Play again that goes home clears the saved id', () => {
+    mockStorage();
+    writeLastGameId('g1');
+    const memory = rememberedTableAction('g1', { error: false, state: standings });
+    expect(memory).toEqual({ action: 'clear' });
+    if (memory.action === 'clear') clearLastGameId();
+    expect(readLastGameId()).toBeNull();
   });
 
   it('clears a missing table, a leave, and a kick', () => {
@@ -120,7 +171,13 @@ describe('rememberedTableAction', () => {
     expect(
       rememberedTableAction('other', {
         error: false,
-        state: { yourId: null, players: { h: { status: 'seated', seat: 0 } }, seatRequests: [] },
+        state: { ...seated, yourId: null },
+      })
+    ).toEqual({ action: 'keep' });
+    expect(
+      rememberedTableAction('other', {
+        error: false,
+        state: { ...standings, yourId: null },
       })
     ).toEqual({ action: 'keep' });
   });

@@ -116,7 +116,8 @@ export function GameRoom({ gameId }: { gameId: string }) {
   );
 
   // Remember this table so home can offer a link back. A dead table, a leave,
-  // or a kick clears it. Play Now on the home page stays available either way.
+  // a kick, or the final standings clear it. The last hand still on the felt
+  // stays remembered. Play Now on the home page stays available either way.
   useEffect(() => {
     const memory = rememberedTableAction(gameId, { error: !!error, state });
     if (memory.action === 'write') writeLastGameId(memory.gameId);
