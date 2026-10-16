@@ -26,8 +26,8 @@ export default function PrivacyPage() {
       <p>
         This browser remembers your last display name (<code>hg:playerName</code>) and
         the last table you sat (<code>hg:lastGameId</code>) in localStorage so the home
-        page can offer a way back. Leaving or opening a missing table clears the saved
-        table.
+        page can offer a way back. Leaving, opening a missing table, or reaching
+        the final standings clears the saved table.
       </p>
       <p>
         House stats keep the display name you type, trimmed to 20 characters, with no
