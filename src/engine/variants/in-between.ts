@@ -75,6 +75,36 @@ function vs(hand: HandState): InBetweenState {
 }
 
 /**
+ * Public high/low mark for a first-card ace after the call. Undefined while
+ * the call is still owed, and undefined when the first card is not an ace.
+ * The felt badge and the bot both read this so they use the same direction
+ * the scorer does (low = 1, high = 14).
+ */
+export function inBetweenAceCall(hand: HandState): 'high' | 'low' | undefined {
+  const first = hand.board[0];
+  if (!first || rankValue(first) !== 14) return undefined;
+  const st = vs(hand);
+  if (st.awaitingAce) return undefined;
+  return st.aceLow ? 'low' : 'high';
+}
+
+/**
+ * True when a seated human is at the table and none of them have chips.
+ * The hand stops so finishHand can apply the humans-out rule: no rebuy
+ * ends the night, a remaining top-up holds the table open. A bot-only
+ * table (no humans) keeps playing.
+ */
+function humansOutOfChips(state: GameState): boolean {
+  let sawHuman = false;
+  for (const p of Object.values(state.players)) {
+    if (p.isBot || p.seat === null || p.status === 'kicked' || p.status === 'left') continue;
+    sawHuman = true;
+    if (p.stack > 0) return false;
+  }
+  return sawHuman;
+}
+
+/**
  * First active player WITH CHIPS in hand order — who opens an orbit. Broke
  * players sit out (their only wager is 0); this runs before the round exists,
  * so it must apply the same stack filter that sitsOut gives the engine —
@@ -166,6 +196,8 @@ export const inBetween: GameVariant = {
     const st = vs(hand);
     st.anyWagered = false;
     st.passOrbits = 0;
+    // A human who anted their last chip must not watch the bots play the pot.
+    if (humansOutOfChips(v.state)) return { kind: 'showdown' };
     const first = firstTurnPlayer(v);
     if (!first) return { kind: 'showdown' };
     dealTurn(v, first);
@@ -175,8 +207,10 @@ export const inBetween: GameVariant = {
   nextPhase(v): PhasePlan {
     const hand = v.hand;
     const st = vs(hand);
-    // Pot gone: the hand is over. resolve() below returns an empty result.
-    if (hand.pot === 0) return { kind: 'showdown' };
+    // Pot gone, or every seated human is broke: the hand is over. resolve()
+    // below returns an empty result; finishHand carries the leftover pot and
+    // ends a bot table whose last human cannot rebuy.
+    if (hand.pot === 0 || humansOutOfChips(v.state)) return { kind: 'showdown' };
     // Idle-table backstop: the third consecutive all-pass orbit ends the
     // hand and the engine carries the leftover pot.
     if (st.anyWagered) st.passOrbits = 0;
@@ -317,9 +351,10 @@ export const inBetween: GameVariant = {
         ...(calledAceLow !== undefined ? { aceLow: calledAceLow } : {}),
       });
 
-      if (hand.pot === 0) {
-        // Pot is gone — settle everyone so the round closes and nextPhase
-        // ends the hand instead of dealing more turns.
+      if (hand.pot === 0 || humansOutOfChips(v.state)) {
+        // Pot is gone, or the last human just busted — settle everyone so
+        // the round closes and nextPhase ends the hand instead of dealing
+        // another bot turn.
         for (const id of hand.inHand) {
           if (!hand.round.actedSinceFullRaise.includes(id))
             hand.round.actedSinceFullRaise.push(id);
@@ -349,11 +384,15 @@ export const inBetween: GameVariant = {
       if (spec?.kind === 'aceCall') return { kind: 'aceCall', high: randInt(2) === 1 };
       if (!spec || spec.kind !== 'wager' || spec.max <= 0 || view.board.length < 2)
         return { kind: 'wager', amount: 0 };
-      // The view cannot see a recorded ace call — treat a first-card ace as
-      // 14 (conservative: a low-called ace only widens the real window).
-      const v1 = rankValue(view.board[0]);
+      // Same ace direction the hand scores with. A called-low first ace is 1;
+      // a called-high ace, a second-card ace, and every other card stay at
+      // rankValue (ace high = 14). Ace-low beside a 2 is an empty window;
+      // treating that ace as 14 made it look eleven ranks wide.
+      const v1 = view.aceCall === 'low' ? 1 : rankValue(view.board[0]);
       const v2 = rankValue(view.board[1]);
-      const spread = Math.abs(v1 - v2) - 1;
+      const spread = Math.abs(v1 - v2) - 1; // ranks strictly between
+      // Empty and one-rank windows are inside this cutoff, along with any
+      // spread of four ranks or fewer.
       if (spread <= 4) return { kind: 'wager', amount: 0 };
       // The legal max is min(pot, stack) — the closest pot proxy the view
       // offers (view.potTotal only sums totalCommitted, empty for communal

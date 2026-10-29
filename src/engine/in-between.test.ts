@@ -3,7 +3,7 @@ import { Table, expectError, seededRandInt } from './test-utils';
 import { getLegalActions } from './betting';
 import { _registerVariantForTest } from './variants/registry';
 import { inBetween } from './variants/in-between';
-import type { BotView } from './bot';
+import { buildBotView, decideExchangeForBot, type BotView } from './bot';
 import type { TableConfig } from './types';
 
 /**
@@ -531,6 +531,55 @@ describe('bot policy', () => {
     }
   });
 
+  it('passes ace-low beside a 2: no rank is strictly between them', () => {
+    // Harry's hand: As marked Low, 2c up, 5s in the middle. Ace-low is 1,
+    // so the window is empty and the 5 must lose. A real player passes.
+    expect(decide(view({ board: ['As', '2c'], aceCall: 'low' }), seededRandInt(1))).toEqual({
+      kind: 'wager',
+      amount: 0,
+    });
+  });
+
+  it('passes a one-rank window', () => {
+    // One winning rank: 6 between 5 and 7; a deuce between ace-low and 3;
+    // a king between queen and ace-high. The spread cutoff already passes
+    // these (it passes four ranks and under).
+    for (const partial of [
+      { board: ['5s', '7s'] },
+      { board: ['As', '3c'], aceCall: 'low' as const },
+      { board: ['As', 'Qs'], aceCall: 'high' as const },
+    ]) {
+      expect(decide(view(partial), seededRandInt(1))).toEqual({ kind: 'wager', amount: 0 });
+    }
+  });
+
+  it('passes ace-high beside a king (adjacent ranks)', () => {
+    expect(decide(view({ board: ['As', 'Ks'], aceCall: 'high' }), seededRandInt(1))).toEqual({
+      kind: 'wager',
+      amount: 0,
+    });
+  });
+
+  it('bets a wide ace-low window and a wide ace-high window', () => {
+    // Ace-low to king: ranks 3 through queen. Ace-high to a 2: ranks 3
+    // through king — the 5 in the screenshot would win that call.
+    const lowKing = decide(view({ board: ['As', 'Ks'], aceCall: 'low' }), seededRandInt(1));
+    const highDeuce = decide(view({ board: ['As', '2c'], aceCall: 'high' }), seededRandInt(1));
+    for (const move of [lowKing, highDeuce]) {
+      expect(move.kind).toBe('wager');
+      if (move.kind !== 'wager') throw new Error('unreachable');
+      expect(move.amount).toBeGreaterThan(0);
+      expect(move.amount).toBeLessThanOrEqual(12);
+    }
+  });
+
+  it('treats a second-card ace as high, so 2 and ace stays a wide bet', () => {
+    const move = decide(view({ board: ['2s', 'As'] }), seededRandInt(1));
+    expect(move.kind).toBe('wager');
+    if (move.kind !== 'wager') throw new Error('unreachable');
+    expect(move.amount).toBeGreaterThan(0);
+  });
+
   it('passes when the legal max is 0 (empty pot share or busted stack)', () => {
     const v = view({
       board: ['2s', 'Ks'],
@@ -574,6 +623,70 @@ describe('bot policy', () => {
 
   it('decideBet is an inert stub (no betting rounds exist)', () => {
     expect(inBetween.bot.decideBet(view(), seededRandInt(1))).toEqual({ move: 'check' });
+  });
+});
+
+describe('bot follows the hand ace call', () => {
+  it('passes ace-low beside a 2 and burns no card', () => {
+    const t = ibTable();
+    rigAceTurn(t, '2c', '5s');
+    const id = t.toAct!;
+    t.apply({ type: 'variantMove', playerId: id, move: { kind: 'aceCall', high: false } });
+    expect(t.hand.board).toEqual(['Ah', '2c']);
+    expect(buildBotView(t.state, id)!.aceCall).toBe('low');
+    const move = decideExchangeForBot(t.state, id, seededRandInt(1));
+    expect(move).toEqual({ kind: 'wager', amount: 0 });
+    t.apply({ type: 'variantMove', playerId: id, move: move! });
+    expect(lastResult(t)).toMatchObject({
+      cards: ['Ah', '2c'],
+      outcome: 'pass',
+      amount: 0,
+      third: null,
+      aceLow: true,
+    });
+    expect(t.totalChips()).toBe(60);
+  });
+
+  it('bets ace-high beside a 2, and the 5 wins', () => {
+    const t = ibTable();
+    rigAceTurn(t, '2c', '5s');
+    const id = t.toAct!;
+    t.apply({ type: 'variantMove', playerId: id, move: { kind: 'aceCall', high: true } });
+    expect(buildBotView(t.state, id)!.aceCall).toBe('high');
+    const move = decideExchangeForBot(t.state, id, seededRandInt(1));
+    expect(move?.kind).toBe('wager');
+    if (move?.kind !== 'wager') throw new Error('unreachable');
+    expect(move.amount).toBeGreaterThan(0);
+    t.apply({ type: 'variantMove', playerId: id, move });
+    expect(lastResult(t)).toMatchObject({
+      cards: ['Ah', '2c'],
+      outcome: 'win',
+      third: '5s',
+      aceLow: false,
+    });
+    expect(lastResult(t).amount).toBe(move.amount);
+    expect(t.totalChips()).toBe(60);
+  });
+
+  it('bets ace-low beside a king', () => {
+    const t = ibTable();
+    rigAceTurn(t, 'Kh', '7c');
+    const id = t.toAct!;
+    t.apply({ type: 'variantMove', playerId: id, move: { kind: 'aceCall', high: false } });
+    expect(buildBotView(t.state, id)!.aceCall).toBe('low');
+    const move = decideExchangeForBot(t.state, id, seededRandInt(1));
+    expect(move?.kind).toBe('wager');
+    if (move?.kind !== 'wager') throw new Error('unreachable');
+    expect(move.amount).toBeGreaterThan(0);
+  });
+
+  it('passes a dealt one-rank gap', () => {
+    const t = ibTable();
+    rigTurn(t, ['5s', '7s'], '6h');
+    expect(decideExchangeForBot(t.state, t.toAct!, seededRandInt(1))).toEqual({
+      kind: 'wager',
+      amount: 0,
+    });
   });
 });
 

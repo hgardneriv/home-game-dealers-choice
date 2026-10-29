@@ -11,6 +11,7 @@ import { rankValue, suitOf, type RandInt } from './deck';
 import { CATEGORY, evaluate5, evaluate7 } from './evaluator';
 import { getLegalActions } from './betting';
 import { getVariant, isImplemented } from './variants/registry';
+import { inBetweenAceCall } from './variants/in-between';
 import { eligiblePlayers } from './seating';
 
 /**
@@ -34,6 +35,12 @@ export interface BotView {
   activeCount: number;
   personality: BotPersonality;
   minBet: number;
+  /**
+   * In-between only: the public high/low call on a first-card ace, after the
+   * player has made it. A low ace counts as 1. Absent while the call is still
+   * owed, and absent for every other game.
+   */
+  aceCall?: 'high' | 'low';
 }
 
 export interface BotDecision {
@@ -72,6 +79,8 @@ export function buildBotView(state: GameState, botId: string): BotView | null {
     activeCount: hand.inHand.filter((id) => !hand.folded.includes(id)).length,
     personality: player.bot ?? { tightness: 0.5, aggression: 0.5, bluffFreq: 0.1 },
     minBet: state.config.minBet,
+    // Public, same mark the felt draws. Missing on every game but in-between.
+    ...(hand.variant === 'in-between' ? { aceCall: inBetweenAceCall(hand) } : {}),
   };
 }
 

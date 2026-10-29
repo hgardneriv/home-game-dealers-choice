@@ -13,6 +13,7 @@ import type {
 import type { GameState } from '@/engine/types';
 import { getLegalActions } from '@/engine/betting';
 import { getVariant } from '@/engine/variants/registry';
+import { inBetweenAceCall } from '@/engine/variants/in-between';
 
 /**
  * The client-facing view of a game. A DISTINCT type from GameState so the
@@ -90,16 +91,6 @@ export interface ClientHand {
   result: HandResult | null;
 }
 
-/** Public High/Low mark for an in-between first-card ace, after the call. */
-function inBetweenAceCall(h: GameState['hand']): 'high' | 'low' | undefined {
-  if (!h || h.variant !== 'in-between') return undefined;
-  const first = h.board[0];
-  if (!first || first[0] !== 'A') return undefined;
-  const st = h.vstate as { awaitingAce?: boolean; aceLow?: boolean };
-  if (st.awaitingAce) return undefined;
-  return st.aceLow ? 'low' : 'high';
-}
-
 export function redactForPlayer(state: GameState, playerId: string | null): ClientGameState {
   const players: Record<string, ClientPlayer> = {};
   for (const p of Object.values(state.players)) {
@@ -159,7 +150,7 @@ export function redactForPlayer(state: GameState, playerId: string | null): Clie
           : null,
       publicCards,
       cardCounts,
-      aceCall: inBetweenAceCall(h),
+      aceCall: h.variant === 'in-between' ? inBetweenAceCall(h) : undefined,
       legalActions:
         playerId && h.round.toAct === playerId ? getLegalActions(state, playerId) : null,
       result: h.result, // public at hand end (felt reveals + settled hands)

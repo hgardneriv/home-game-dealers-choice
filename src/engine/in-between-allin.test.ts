@@ -133,6 +133,69 @@ describe('a broke in-between player is skipped, not prompted', () => {
     expect(t.state.players['p1'].status).toBe('busted');
   });
 
+  it('sole human all-in loss ends the night before another bot orbit', () => {
+    // Quick play (topUps 0). Harry antes, then loses the rest of his stack.
+    // The bots still have chips and would otherwise keep betting.
+    const t = new Table(1, {
+      config: { enabledVariants: ['in-between'], ante: 2, topUps: 0 },
+    });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    const [b1, b2] = t.state.seats.slice(1, 3) as [string, string];
+    t.state.players['p0'].stack = 4; // ante 2, then an all-in loss of the last 2
+    t.state.players[b1].stack = 40;
+    t.state.players[b2].stack = 24;
+    t.start();
+
+    // Button is seat 0, so the two bots act, then Harry.
+    expect(t.toAct).toBe(b1);
+    pass(t, b1);
+    pass(t, b2);
+    expect(t.toAct).toBe('p0');
+    expect(t.stack('p0')).toBe(2);
+
+    const turns = () => t.state.events.filter((e) => e.type === 'in-between-turn').length;
+    const dealt = turns();
+    rigTurn(t, ['5s', '9s'], '2h'); // outside the window: a clean loss
+    wager(t, 'p0', 2);
+
+    expect(t.stack('p0')).toBe(0);
+    expect(t.state.players['p0'].status).toBe('busted');
+    expect(t.state.phase).toBe('ended');
+    expect(t.state.endedReason).toBe('humansOut');
+    expect(turns()).toBe(dealt); // no bot was dealt another turn
+    expect(t.state.hand?.round.toAct).toBeNull();
+    const ended = t.state.events.find((e) => e.type === 'game-ended');
+    expect((ended!.data as { winnerId: string; reason: string }).reason).toBe('humansOut');
+    expect((ended!.data as { winnerId: string }).winnerId).toBe(b1);
+    expect(t.stack(b1)).toBeGreaterThan(t.stack(b2));
+    expect(t.totalChips()).toBe(68);
+  });
+
+  it('a sole human with a top-up left keeps the table open', () => {
+    const t = new Table(1, {
+      config: { enabledVariants: ['in-between'], ante: 2, topUps: 2 },
+    });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    t.apply({ type: 'addBot', byId: 'p0' });
+    const [b1, b2] = t.state.seats.slice(1, 3) as [string, string];
+    t.state.players['p0'].stack = 4;
+    t.state.players[b1].stack = 40;
+    t.state.players[b2].stack = 24;
+    t.start();
+    pass(t, b1);
+    pass(t, b2);
+    rigTurn(t, ['5s', '9s'], '2h');
+    wager(t, 'p0', 2);
+
+    expect(t.state.players['p0'].status).toBe('busted');
+    expect(t.state.phase).toBe('hand-over');
+    expect(t.state.endedReason).toBeNull();
+    expect(t.stack(b1)).toBeGreaterThan(0);
+    expect(t.stack(b2)).toBeGreaterThan(0);
+    expect(t.totalChips()).toBe(68);
+  });
+
   it('sitsOut applies to exchange rounds ONLY — betting rounds ignore it', () => {
     // A stub variant (borrowed id) whose sitsOut would bench EVERYONE: its
     // betting round must still run normally, proving the engine consults
